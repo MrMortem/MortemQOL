@@ -61,6 +61,12 @@ fn main() {
     let begun = Instant::now();
     search::run(&with_copier, &|| false, &mut |_| {});
     println!("with Blueprint, no order pruning: {:?}", begun.elapsed());
+    let mut money = v.clone();
+    money["options"] = json!({"objective": "money"});
+    let money_mode = snapshot::parse(money.to_string().as_bytes()).unwrap();
+    let begun = Instant::now();
+    search::run(&money_mode, &|| false, &mut |_| {});
+    println!("money mode: {:?}", begun.elapsed());
     let s = snapshot::parse(v.to_string().as_bytes()).unwrap();
     for _ in 0..3 {
         let begun = Instant::now();

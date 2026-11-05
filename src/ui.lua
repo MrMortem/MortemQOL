@@ -9,53 +9,53 @@ local badged = {}
 local reason_shown = nil
 
 -- Text the panel's nodes read every frame.
-local text = { hand = "", score = "", range = "", percent = "", selection = "", gain = "", status = "" }
+local text = { hand = "", score = "", range = "", percent = "", selection = "", gain = "", status = "", money = "", warning = "" }
 
 local function line(key, scale, colour)
   return {
     n = G.UIT.R,
-    config = { align = "cm", minh = 0.1 + scale },
+    config = { align = "cm", minh = 0.05 + scale },
     nodes = { { n = G.UIT.T, config = { ref_table = text, ref_value = key, scale = scale, colour = colour, shadow = true } } },
   }
 end
 
-local function panel_definition(reasons)
+local function panel_definition(reasons, mode)
   local status_config = { align = "cm", minh = 0.28 }
   if reasons then
     status_config.tooltip = { title = "Approximate", text = reasons }
   end
-  return {
-    n = G.UIT.ROOT,
-    config = { align = "cm", colour = G.C.BLACK, r = 0.1, padding = 0.12, emboss = 0.05, minw = PANEL_WIDTH },
+  local rows = {}
+  local function add(row) rows[#rows + 1] = row end
+  if mode == "money" then add(line("money", 0.45, G.C.MONEY)) end
+  add(line("hand", 0.35, G.C.UI.TEXT_LIGHT))
+  add(line("score", mode == "money" and 0.35 or 0.5, G.C.GOLD))
+  add(line("range", 0.3, G.C.UI.TEXT_LIGHT))
+  -- The panel has to stay clear of the hand, and Money mode has the blind warning instead.
+  if mode ~= "money" then add(line("percent", 0.3, G.C.UI.TEXT_LIGHT)) end
+  add(line("selection", 0.3, G.C.UI.TEXT_LIGHT))
+  add(line("gain", 0.3, G.C.GREEN))
+  if mode == "money" then add(line("warning", 0.3, G.C.RED)) end
+  add({
+    n = G.UIT.R,
+    config = status_config,
+    nodes = { { n = G.UIT.T, config = { ref_table = text, ref_value = "status", scale = 0.3, colour = G.C.ORANGE, shadow = true } } },
+  })
+  add({
+    n = G.UIT.R,
+    config = { align = "cm", padding = 0.05 },
     nodes = {
       {
         n = G.UIT.C,
-        config = { align = "cm", minw = PANEL_WIDTH },
-        nodes = {
-          line("hand", 0.4, G.C.UI.TEXT_LIGHT),
-          line("score", 0.55, G.C.GOLD),
-          line("range", 0.3, G.C.UI.TEXT_LIGHT),
-          line("percent", 0.3, G.C.UI.TEXT_LIGHT),
-          line("selection", 0.3, G.C.UI.TEXT_LIGHT),
-          line("gain", 0.3, G.C.GREEN),
-          {
-            n = G.UIT.R,
-            config = status_config,
-            nodes = { { n = G.UIT.T, config = { ref_table = text, ref_value = "status", scale = 0.3, colour = G.C.ORANGE, shadow = true } } },
-          },
-          {
-            n = G.UIT.R,
-            config = { align = "cm", padding = 0.05 },
-            nodes = {
-              {
-                n = G.UIT.C,
-                config = { align = "cm", button = "mqol_select", colour = G.C.RED, r = 0.1, padding = 0.08, minw = 1.4, hover = true, shadow = true },
-                nodes = { { n = G.UIT.T, config = { text = "Select", scale = 0.35, colour = G.C.UI.TEXT_LIGHT, shadow = true } } },
-              },
-            },
-          },
-        },
+        config = { align = "cm", button = "mqol_select", colour = G.C.RED, r = 0.1, padding = 0.08, minw = 1.4, hover = true, shadow = true },
+        nodes = { { n = G.UIT.T, config = { text = "Select", scale = 0.35, colour = G.C.UI.TEXT_LIGHT, shadow = true } } },
       },
+    },
+  })
+  return {
+    n = G.UIT.ROOT,
+    config = { align = "cm", colour = G.C.BLACK, r = 0.1, padding = 0.08, emboss = 0.05, minw = PANEL_WIDTH },
+    nodes = {
+      { n = G.UIT.C, config = { align = "cm", minw = PANEL_WIDTH }, nodes = rows },
     },
   }
 end
@@ -72,12 +72,12 @@ local function destroy_panel()
   reason_shown = nil
 end
 
-local function create_panel(reasons)
+local function create_panel(reasons, mode)
   destroy_panel()
   local config = MQOL.mod.config
   local x, y = default_position()
   panel = UIBox({
-    definition = panel_definition(reasons),
+    definition = panel_definition(reasons, mode),
     config = { align = "cm", offset = { x = 0, y = 0 } },
   })
   panel:hard_set_T(config.panel_x or x, config.panel_y or y, panel.T.w, panel.T.h)
@@ -115,8 +115,8 @@ local function by_id(cards, id)
   return nil
 end
 
-local function refresh_badges(result)
-  local jokers = result and MQOL.format.positive(result.gain) and result.joker_order or nil
+local function refresh_badges(result, mode)
+  local jokers = MQOL.panel_text.show_joker_badges(result, mode) and result.joker_order or nil
   local cards = result and result.card_order_matters and result.best and result.best.play or nil
   local signature = table.concat(jokers or {}, ",") .. "|" .. table.concat(cards or {}, ",")
   if signature == badge_signature then return end
@@ -132,39 +132,10 @@ local function refresh_badges(result)
   end
 end
 
-local function set_text(state)
-  local format = MQOL.format
-  for key in pairs(text) do text[key] = "" end
-  local result = state.result
-  local best = result and result.best
-  if state.status == "unavailable" then
-    text.status = "Engine unavailable"
-    return
-  end
-  if best then
-    text.hand = best.hand
-    text.score = format.score(best.expected)
-    local range = format.range(best.floor, best.ceiling)
-    text.range = range and ("Range " .. range) or ""
-    text.percent = format.percent(best.blind_pct) .. " of blind"
-  elseif state.status == "ready" then
-    text.hand = "No scoring play"
-  end
-  if state.selection then
-    text.selection = "Selected: " .. format.score(state.selection.expected)
-  end
-  if result and format.positive(result.gain) then
-    local label = result.order_exact and "Reorder jokers: +" or "Reorder jokers (best found): +"
-    text.gain = label .. format.score(result.gain)
-  end
+local function set_text(state, mode)
   local mismatches = MQOL.verify and MQOL.verify.counts().mismatch or 0
-  if state.status == "calculating" then
-    text.status = "Calculating..."
-  elseif mismatches > 0 then
-    text.status = mismatches .. " score mismatch" .. (mismatches == 1 and "" or "es") .. " logged"
-  elseif result and result.approximate and #result.approximate > 0 then
-    text.status = "Approximate (hover)"
-  end
+  local lines = MQOL.panel_text.build(state, mode, mismatches)
+  for key, value in pairs(lines) do text[key] = value end
 end
 
 local function reasons_for(result)
@@ -187,7 +158,8 @@ end
 
 function M.refresh()
   local state = MQOL.live.state()
-  local enabled = MQOL.mod.config.show_panel
+  local enabled = MQOL.settings.assist()
+  local mode = MQOL.settings.mode()
   local selecting = G.STAGE == G.STAGES.RUN and G.STATE == G.STATES.SELECTING_HAND
   if not enabled or not selecting or state.status == "idle" then
     destroy_panel()
@@ -195,13 +167,13 @@ function M.refresh()
     return
   end
   local reasons = reasons_for(state.result)
-  local reason_key = reasons and table.concat(reasons, "|") or ""
+  local reason_key = mode .. "|" .. (reasons and table.concat(reasons, "|") or "")
   if not panel or reason_key ~= reason_shown then
-    create_panel(reasons)
+    create_panel(reasons, mode)
     reason_shown = reason_key
   end
-  set_text(state)
-  refresh_badges(state.result)
+  set_text(state, mode)
+  refresh_badges(state.result, mode)
   remember_position()
 end
 
@@ -209,15 +181,6 @@ function M.init(mod)
   MQOL.mod = mod
   G.FUNCS.mqol_select = function()
     MQOL.live.select_best()
-  end
-  mod.config_tab = function()
-    return {
-      n = G.UIT.ROOT,
-      config = { r = 0.1, minw = 6, align = "cm", padding = 0.2, colour = G.C.BLACK },
-      nodes = {
-        create_toggle({ label = "Show calculator panel", ref_table = mod.config, ref_value = "show_panel" }),
-      },
-    }
   end
 end
 

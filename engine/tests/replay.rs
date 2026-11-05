@@ -34,6 +34,16 @@ fn check(prediction: &Value, actual: &Value, context: &str) {
     }
 }
 
+fn check_money(prediction: &Value, actual: f64, context: &str) {
+    let (floor, ceiling) =
+        (number(&prediction["money_floor"]), number(&prediction["money_ceiling"]));
+    let slack = 1e-9 * ceiling.abs().max(floor.abs()).max(1.0);
+    assert!(
+        actual >= floor - slack && actual <= ceiling + slack,
+        "{context}: money {actual} outside {floor}..{ceiling}"
+    );
+}
+
 #[test]
 fn all_replays_match() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/replays");
@@ -47,9 +57,22 @@ fn all_replays_match() {
             let request = json!({"snapshot": row["snapshot"], "play": row["play"]});
             let out = mortemqol_engine::score::score_request(request.to_string().as_bytes());
             let prediction: Value = serde_json::from_slice(&out.unwrap()).unwrap();
-            check(&prediction, &row["actual"], &format!("{}:{}", path.display(), i + 1));
+            let context = format!("{}:{}", path.display(), i + 1);
+            if !row["actual"].is_null() {
+                check(&prediction, &row["actual"], &context);
+            }
+            if let Some(money) = row["actual_money"].as_f64() {
+                check_money(&prediction, money, &context);
+            }
         }
     }
+}
+
+#[test]
+fn check_catches_wrong_money() {
+    let p = json!({"money_floor": 3.0, "money_ceiling": 3.0});
+    assert!(std::panic::catch_unwind(|| check_money(&p, 4.0, "x")).is_err());
+    check_money(&p, 3.0, "x");
 }
 
 #[test]

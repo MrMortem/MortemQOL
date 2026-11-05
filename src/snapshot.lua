@@ -105,6 +105,40 @@ local function vouchers()
   return out
 end
 
+local function sort_text(value)
+  return value or ""
+end
+
+-- Counts the remaining deck into groups, which is what the game's deck view shows. Grouping and
+-- sorting mean no order survives. Nothing else may read individual deck cards.
+local function deck_contents()
+  local groups, by_key = {}, {}
+  for _, card in ipairs(G.deck and G.deck.cards or {}) do
+    local center = card.config and card.config.center
+    local rank = number_or(card.base and card.base.id, 0)
+    local suit = card.base and card.base.suit or ""
+    local enh = center and center.set == "Enhanced" and center.key or nil
+    local ed = edition_key(card)
+    local seal = card.seal
+    local key = table.concat({ rank, suit, sort_text(enh), sort_text(ed), sort_text(seal) }, "|")
+    local group = by_key[key]
+    if not group then
+      group = { rank = rank, suit = suit, enh = enh, ed = ed, seal = seal, count = 0 }
+      by_key[key] = group
+      groups[#groups + 1] = group
+    end
+    group.count = group.count + 1
+  end
+  table.sort(groups, function(a, b)
+    if a.rank ~= b.rank then return a.rank < b.rank end
+    if a.suit ~= b.suit then return a.suit < b.suit end
+    if sort_text(a.enh) ~= sort_text(b.enh) then return sort_text(a.enh) < sort_text(b.enh) end
+    if sort_text(a.ed) ~= sort_text(b.ed) then return sort_text(a.ed) < sort_text(b.ed) end
+    return sort_text(a.seal) < sort_text(b.seal)
+  end)
+  return groups
+end
+
 local function in_lobby()
   return (PVP and PVP.LOBBY and PVP.LOBBY.code ~= nil) and true or false
 end
@@ -146,12 +180,14 @@ function M.build()
       remaining = G.deck and #G.deck.cards or 0,
       total = G.playing_cards and #G.playing_cards or 0,
       starting = game.starting_deck_size or 0,
+      contents = deck_contents(),
     },
     vouchers = vouchers(),
     consumables = map(G.consumeables and G.consumeables.cards, function(card)
       return { key = card.config and card.config.center and card.config.center.key or "" }
     end),
     lobby = in_lobby(),
+    options = MQOL.settings.options(),
   }
 end
 

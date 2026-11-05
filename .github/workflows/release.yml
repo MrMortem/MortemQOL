@@ -51,7 +51,7 @@ jobs:
           mkdir -p dist/native/macos dist/native/windows
           cp artifacts/macos/libmortemqol_engine.dylib dist/native/macos/
           cp artifacts/windows/mortemqol_engine.dll dist/native/windows/
-          cp -R manifest.json MortemQOL.json MortemQOL.lua README.md LICENSE icon.png src dist/
+          cp -R manifest.json MortemQOL.json MortemQOL.lua README.md LICENSE icon.png src assets dist/
           [ -f config.lua ] && cp config.lua dist/ || true
           (cd dist && zip -r "../MortemQOL-$version.zip" .)
       - name: Publish

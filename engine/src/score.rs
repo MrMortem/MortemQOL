@@ -18,6 +18,59 @@ pub enum Mode {
     Ceiling,
 }
 
+/// How chance effects resolve during an evaluation.
+pub trait Chance {
+    /// The weight of an effect that fires with probability `p`.
+    fn weight(&mut self, p: f64) -> f64;
+    /// A value from a random range.
+    fn pick(&mut self, min: f64, max: f64) -> f64;
+    /// Whether any chance effect was met.
+    fn used(&self) -> bool;
+}
+
+/// Resolves chance by the floor, expected or ceiling rule.
+pub struct ModeChance {
+    mode: Mode,
+    used: bool,
+}
+
+impl ModeChance {
+    pub fn new(mode: Mode) -> Self {
+        ModeChance { mode, used: false }
+    }
+}
+
+impl Chance for ModeChance {
+    fn weight(&mut self, p: f64) -> f64 {
+        self.used = true;
+        match self.mode {
+            Mode::Floor => 0.0,
+            Mode::Expected => p,
+            Mode::Ceiling => 1.0,
+        }
+    }
+
+    fn pick(&mut self, min: f64, max: f64) -> f64 {
+        self.used = true;
+        match self.mode {
+            Mode::Floor => min,
+            Mode::Expected => (min + max) / 2.0,
+            Mode::Ceiling => max,
+        }
+    }
+
+    fn used(&self) -> bool {
+        self.used
+    }
+}
+
+/// The score and money of one evaluation. Money is the change from the balance at play time.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Expected {
+    pub score: f64,
+    pub money: f64,
+}
+
 /// Joker values that can change during a hand.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct JState {
@@ -28,7 +81,7 @@ pub struct JState {
 
 pub struct ScoreCtx<'a> {
     pub s: &'a Snapshot,
-    pub mode: Mode,
+    pub chance: &'a mut dyn Chance,
     pub order: &'a [usize],
     pub played: Vec<Cow<'a, Card>>,
     pub held: Vec<Cow<'a, Card>>,
@@ -41,7 +94,6 @@ pub struct ScoreCtx<'a> {
     pub dollars: f64,
     pub hands_left: f64,
     pub blind_triggered: bool,
-    pub chance_used: bool,
     pub oops: f64,
     pub jstate: Vec<JState>,
     pub perma_add: Vec<f64>,
@@ -66,12 +118,7 @@ impl ScoreCtx<'_> {
         if p <= 0.0 {
             return 0.0;
         }
-        self.chance_used = true;
-        match self.mode {
-            Mode::Floor => 0.0,
-            Mode::Expected => p,
-            Mode::Ceiling => 1.0,
-        }
+        self.chance.weight(p)
     }
 
     pub fn x_mult(&mut self, x: f64) {
@@ -103,6 +150,9 @@ pub struct Scored {
     pub legal: bool,
     pub has_chance: bool,
     pub approximate: Vec<String>,
+    pub money_floor: f64,
+    pub money_expected: f64,
+    pub money_ceiling: f64,
 }
 
 /// Numbers that JSON cannot represent cross the boundary as "naneinf".
@@ -125,6 +175,9 @@ impl Scored {
             "legal": self.legal,
             "has_chance": self.has_chance,
             "approximate": self.approximate,
+            "money_floor": to_json_number(self.money_floor),
+            "money_expected": to_json_number(self.money_expected),
+            "money_ceiling": to_json_number(self.money_ceiling),
         })
     }
 }
@@ -284,9 +337,9 @@ fn run(
     order: &[usize],
     det: &Detected,
     rules: Rules,
-    mode: Mode,
+    chance: &mut dyn Chance,
     level_ups: u32,
-) -> (f64, bool) {
+) -> Expected {
     let played: Vec<Cow<Card>> = play.iter().map(|&i| Cow::Borrowed(&s.hand[i])).collect();
     let held: Vec<Cow<Card>> = s
         .hand
@@ -313,7 +366,7 @@ fn run(
     let oops = s.jokers.iter().filter(|j| j.is("j_oops") && !j.debuff).count();
     let mut ctx = ScoreCtx {
         s,
-        mode,
+        chance,
         order,
         perma_add: vec![0.0; played.len()],
         played,
@@ -327,7 +380,6 @@ fn run(
         dollars,
         hands_left: s.round.hands_left - 1.0,
         blind_triggered,
-        chance_used: false,
         oops: 2f64.powi(oops as i32),
         jstate: jokers::initial_state(s),
         cards_added: 0.0,
@@ -356,11 +408,17 @@ fn run(
         ctx.chips = half;
         ctx.mult = half;
     }
-    (ctx.chips * ctx.mult, ctx.chance_used)
+    Expected { score: ctx.chips * ctx.mult, money: ctx.dollars - s.round.dollars }
 }
 
 fn binomial(n: u32, k: u32) -> f64 {
     (0..k).fold(1.0, |acc, i| acc * (n - i) as f64 / (i + 1) as f64)
+}
+
+/// Space Joker's trigger count and chance for this order.
+fn space_chance(s: &Snapshot, order: &[usize]) -> (u32, f64) {
+    let oops = s.jokers.iter().filter(|j| j.is("j_oops") && !j.debuff).count();
+    (jokers::space_triggers(s, order), (2f64.powi(oops as i32) / jokers::space_odds(s)).min(1.0))
 }
 
 /// Scores `play` (indexes into `s.hand`, in play order) with jokers in `order` (indexes into
@@ -379,66 +437,104 @@ pub fn score_play(s: &Snapshot, play: &[usize], order: &[usize]) -> Scored {
         legal: true,
         has_chance: false,
         approximate: approximate_tags(s),
+        money_floor: 0.0,
+        money_expected: 0.0,
+        money_ceiling: 0.0,
     };
     if blinds::debuffs_hand(s, det.name, play.len()) {
         out.legal = false;
+        let money = jokers::debuffed_hand_money(s, order);
+        out.money_floor = money;
+        out.money_expected = money;
+        out.money_ceiling = money;
         return out;
     }
-    let triggers = jokers::space_triggers(s, order);
-    let oops = s.jokers.iter().filter(|j| j.is("j_oops") && !j.debuff).count();
-    let p = (2f64.powi(oops as i32) / jokers::space_odds(s)).min(1.0);
-    let run_at = |mode, k| run(s, play, order, &det, rules, mode, k);
+    let (triggers, p) = space_chance(s, order);
+    let run_at = |mode, k| {
+        let mut chance = ModeChance::new(mode);
+        let result = run(s, play, order, &det, rules, &mut chance, k);
+        (result, chance.used())
+    };
     if triggers == 0 || p >= 1.0 {
         let k = if p >= 1.0 { triggers } else { 0 };
-        let (expected, chance) = run_at(Mode::Expected, k);
-        out.expected = expected;
-        out.has_chance = chance;
-        if chance {
-            out.floor = run_at(Mode::Floor, k).0;
-            out.ceiling = run_at(Mode::Ceiling, k).0;
+        let (expected, used) = run_at(Mode::Expected, k);
+        out.expected = expected.score;
+        out.money_expected = expected.money;
+        out.has_chance = used;
+        let (floor, ceiling) = if used {
+            (run_at(Mode::Floor, k).0, run_at(Mode::Ceiling, k).0)
         } else {
-            out.floor = expected;
-            out.ceiling = expected;
-        }
+            (expected, expected)
+        };
+        out.floor = floor.score;
+        out.ceiling = ceiling.score;
+        out.money_floor = floor.money;
+        out.money_ceiling = ceiling.money;
         return out;
     }
     out.has_chance = true;
-    out.floor = run_at(Mode::Floor, 0).0;
-    out.ceiling = run_at(Mode::Ceiling, triggers).0;
-    out.expected = (0..=triggers)
-        .map(|k| {
-            let w =
-                binomial(triggers, k) * p.powi(k as i32) * (1.0 - p).powi((triggers - k) as i32);
-            w * run_at(Mode::Expected, k).0
-        })
-        .sum();
+    let (floor, ceiling) = (run_at(Mode::Floor, 0).0, run_at(Mode::Ceiling, triggers).0);
+    out.floor = floor.score;
+    out.ceiling = ceiling.score;
+    out.money_floor = floor.money;
+    out.money_ceiling = ceiling.money;
+    let mean = weighted_mean(triggers, p, |k| run_at(Mode::Expected, k).0);
+    out.expected = mean.score;
+    out.money_expected = mean.money;
     out
 }
 
-/// Just the expected score, for the search's hot loop.
-pub fn score_expected(s: &Snapshot, play: &[usize], order: &[usize]) -> f64 {
+/// The average over how many of `triggers` Space Joker level-ups fire.
+fn weighted_mean(triggers: u32, p: f64, mut at: impl FnMut(u32) -> Expected) -> Expected {
+    let mut mean = Expected::default();
+    for k in 0..=triggers {
+        let w = binomial(triggers, k) * p.powi(k as i32) * (1.0 - p).powi((triggers - k) as i32);
+        let result = at(k);
+        mean.score += w * result.score;
+        mean.money += w * result.money;
+    }
+    mean
+}
+
+/// Just the expected score and money, for the search's hot loop.
+pub fn score_expected(s: &Snapshot, play: &[usize], order: &[usize]) -> Expected {
     let rules = jokers::rules(s);
     let refs: Vec<&Card> = play.iter().map(|&i| &s.hand[i]).collect();
     let det = hand::detect(&refs, &rules);
     if blinds::debuffs_hand(s, det.name, play.len()) {
-        return 0.0;
+        return Expected { score: 0.0, money: jokers::debuffed_hand_money(s, order) };
     }
-    let triggers = jokers::space_triggers(s, order);
+    let (triggers, p) = space_chance(s, order);
+    let at = |k| {
+        let mut chance = ModeChance::new(Mode::Expected);
+        run(s, play, order, &det, rules, &mut chance, k)
+    };
     if triggers == 0 {
-        return run(s, play, order, &det, rules, Mode::Expected, 0).0;
+        at(0)
+    } else if p >= 1.0 {
+        at(triggers)
+    } else {
+        weighted_mean(triggers, p, at)
     }
-    let oops = s.jokers.iter().filter(|j| j.is("j_oops") && !j.debuff).count();
-    let p = (2f64.powi(oops as i32) / jokers::space_odds(s)).min(1.0);
-    if p >= 1.0 {
-        return run(s, play, order, &det, rules, Mode::Expected, triggers).0;
+}
+
+/// Evaluates one play under any chance rule. Each Space Joker trigger counts as firing only at
+/// full weight.
+pub fn run_with(
+    s: &Snapshot,
+    play: &[usize],
+    order: &[usize],
+    chance: &mut dyn Chance,
+) -> Expected {
+    let rules = jokers::rules(s);
+    let refs: Vec<&Card> = play.iter().map(|&i| &s.hand[i]).collect();
+    let det = hand::detect(&refs, &rules);
+    if blinds::debuffs_hand(s, det.name, play.len()) {
+        return Expected { score: 0.0, money: jokers::debuffed_hand_money(s, order) };
     }
-    (0..=triggers)
-        .map(|k| {
-            let w =
-                binomial(triggers, k) * p.powi(k as i32) * (1.0 - p).powi((triggers - k) as i32);
-            w * run(s, play, order, &det, rules, Mode::Expected, k).0
-        })
-        .sum()
+    let (triggers, p) = space_chance(s, order);
+    let fired = (0..triggers).filter(|_| chance.weight(p) >= 1.0).count() as u32;
+    run(s, play, order, &det, rules, chance, fired)
 }
 
 #[derive(Deserialize)]

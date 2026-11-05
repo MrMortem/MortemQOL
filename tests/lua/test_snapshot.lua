@@ -3,6 +3,7 @@ package.path = "./?.lua;./tests/lua/?.lua;" .. package.path
 local fake = require("fake_game")
 
 MQOL = {}
+MQOL.settings = dofile("src/settings.lua")
 MQOL.json = dofile("src/json.lua")
 MQOL.snapshot = dofile("src/snapshot.lua")
 
@@ -29,12 +30,66 @@ end
 
 local tests = {}
 
-function tests.snapshot_never_reads_deck_order()
+function tests.deck_contents_ignore_order()
+  G = fake.new()
+  G.deck.cards[3].seal = "Red"
+  local first = MQOL.json.encode(MQOL.snapshot.build().deck)
+  local cards = G.deck.cards
+  for i = 1, #cards do
+    local j = #cards - i + 1
+    if i < j then cards[i], cards[j] = cards[j], cards[i] end
+  end
+  assert(MQOL.json.encode(MQOL.snapshot.build().deck) == first, "order leaked")
+end
+
+function tests.deck_contents_group_and_count()
+  G = fake.new()
+  G.deck.cards = { fake.card(1, 14, "Spades"), fake.card(2, 14, "Spades"), fake.card(3, 2, "Hearts") }
+  local contents = MQOL.snapshot.build().deck.contents
+  assert(#contents == 2)
+  assert(contents[1].rank == 2 and contents[1].count == 1)
+  assert(contents[2].rank == 14 and contents[2].count == 2)
+end
+
+function tests.deck_contents_keep_traits_apart()
+  G = fake.new()
+  local glass = fake.card(1, 14, "Spades", { seal = "Red", edition = { key = "e_foil" } })
+  glass.config.center = { key = "m_glass", set = "Enhanced" }
+  G.deck.cards = { glass, fake.card(2, 14, "Spades") }
+  local contents = MQOL.snapshot.build().deck.contents
+  assert(#contents == 2)
+  local found = false
+  for _, group in ipairs(contents) do
+    if group.enh == "m_glass" then
+      found = group.seal == "Red" and group.ed == "e_foil" and group.count == 1
+    end
+  end
+  assert(found)
+end
+
+function tests.deck_contents_have_no_ids_or_positions()
+  G = fake.new()
+  for _, group in ipairs(MQOL.snapshot.build().deck.contents) do
+    assert(group.id == nil and group.sort_id == nil and group.position == nil)
+    for key in pairs(group) do
+      assert(key == "rank" or key == "suit" or key == "enh" or key == "ed" or key == "seal" or key == "count", key)
+    end
+  end
+end
+
+function tests.deck_remaining_still_counts()
   G = fake.new()
   local s = MQOL.snapshot.build()
   assert(s.deck.remaining == 44)
   assert(s.deck.total == 52)
   assert(s.deck.starting == 52)
+end
+
+function tests.options_come_from_settings()
+  G = fake.new()
+  MQOL.settings.init({ mode = "money" })
+  assert(MQOL.snapshot.build().options.objective == "money")
+  MQOL.settings.init({})
 end
 
 function tests.fields_map_from_game_state()

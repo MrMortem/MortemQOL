@@ -12,6 +12,26 @@ A Balatro mod with a live calculator. While you choose cards, a small panel show
 
 The **Select** button selects the recommended cards. The mod never plays a hand or moves a card or joker.
 
+## Gear menu
+
+The gear icon at the top left of the screen opens the menu during a run. The same settings are in the mod's Config tab.
+
+- **Assistance:** turns the calculator on or off. When it's off, the panel, badges, searches and score checks all stop.
+- **Mode:** Score or Money.
+
+## Money mode
+
+Money mode recommends the play that earns the most money from this hand, using score as the tiebreak. If no play earns money, it recommends the same play as Score mode.
+
+It counts money that changes when the hand is played:
+
+- **Earned:** Gold Seals, Lucky Cards, Golden Ticket, Rough Gem, Business Card, Reserved Parking, To Do List and Matador.
+- **Lost:** The Tooth and The Ox.
+
+It doesn't count end-of-round money, such as held Gold Cards, interest or leftover hands.
+
+**Money mode can lose a run,** because it ranks money ahead of score. On your last hand, the panel warns you with "Won't beat the blind" if the recommended play won't win. A hand the boss blind blocks can also be the recommendation when Matador pays for it, and the panel marks it "Blocked: scores 0".
+
 ## Install
 
 You need [r2modmac](https://github.com/Zard-Studios/r2modmac) (or r2modman) with Steamodded and Lovely in your profile.
@@ -43,13 +63,13 @@ Hover over the label to see why. It appears when the result can't be exact:
 
 ## Limits
 
-- It covers the current hand only. It doesn't suggest discards or plan across a round.
+- It covers the current hand only. It doesn't suggest discards or plan across a round. Its checks never look at deck order, and the deck is only counted the way the game's deck view shows it.
 - With more than 6 jokers, or very large hands, joker order is the best found rather than guaranteed best, and the panel says so.
 - Scores use standard floating-point numbers, so Talisman-scale scores aren't supported.
 
 ## Reporting a wrong score
 
-The mod compares every play with the score the game actually awards. If they disagree, the panel shows a mismatch count and the details are saved to `MortemQOL/verify.jsonl` in your Balatro save folder (`~/Library/Application Support/Balatro` on macOS, `%AppData%\Balatro` on Windows). Please attach that file to a [new issue](https://github.com/MrMortem/MortemQOL/issues).
+The mod compares every play with the score and money the game actually awards. If they disagree, the panel shows a mismatch count and the details are saved to `MortemQOL/verify.jsonl` in your Balatro save folder (`~/Library/Application Support/Balatro` on macOS, `%AppData%\Balatro` on Windows). Please attach that file to a [new issue](https://github.com/MrMortem/MortemQOL/issues).
 
 ## Development
 

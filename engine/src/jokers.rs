@@ -1,7 +1,7 @@
 //! Vanilla joker effects, following Card:calculate_joker. Values come from the joker's
 //! `ability` table in the snapshot; the defaults are the game's own.
 use crate::hand::{self, Rules};
-use crate::score::{JState, Mode, ScoreCtx};
+use crate::score::{JState, ScoreCtx};
 use crate::snapshot::{Card, Joker, Snapshot};
 
 const VANILLA: [&str; 150] = [
@@ -215,6 +215,15 @@ fn resolve(s: &Snapshot, order: &[usize], pos: usize) -> Option<(usize, bool)> {
 
 fn resolved_jokers(s: &Snapshot, order: &[usize]) -> Vec<(usize, bool)> {
     (0..order.len()).filter_map(|pos| resolve(s, order, pos)).collect()
+}
+
+/// Money from context.debuffed_hand: only Matador pays on a blocked hand.
+pub fn debuffed_hand_money(s: &Snapshot, order: &[usize]) -> f64 {
+    resolved_jokers(s, order)
+        .iter()
+        .filter(|(t, _)| s.jokers[*t].is("j_matador"))
+        .map(|(t, _)| s.jokers[*t].extra(8.0))
+        .sum()
 }
 
 pub fn space_triggers(s: &Snapshot, order: &[usize]) -> u32 {
@@ -528,12 +537,7 @@ fn joker_main(ctx: &mut ScoreCtx, t: usize) {
         }
         "j_misprint" => {
             let (min, max) = (j.extra_num("min", 0.0), j.extra_num("max", 23.0));
-            ctx.chance_used = true;
-            ctx.mult += match ctx.mode {
-                Mode::Floor => min,
-                Mode::Expected => (min + max) / 2.0,
-                Mode::Ceiling => max,
-            };
+            ctx.mult += ctx.chance.pick(min, max);
         }
         "j_banner" if round.discards_left > 0.0 => ctx.chips += round.discards_left * j.extra(30.0),
         "j_stuntman" => ctx.chips += j.extra_num("chip_mod", 250.0),

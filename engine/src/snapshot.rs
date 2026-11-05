@@ -204,6 +204,43 @@ pub struct Deck {
     /// Deck size at the start of the run.
     #[serde(default, deserialize_with = "lenient_zero")]
     pub starting: f64,
+    #[serde(default)]
+    pub contents: Vec<DeckGroup>,
+}
+
+/// How many remaining deck cards share these traits. Grouping and sorting mean this holds no order.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeckGroup {
+    #[serde(default, deserialize_with = "lenient_int")]
+    pub rank: i32,
+    #[serde(default)]
+    pub suit: String,
+    #[serde(default)]
+    pub enh: Option<String>,
+    #[serde(default)]
+    pub ed: Option<String>,
+    #[serde(default)]
+    pub seal: Option<String>,
+    #[serde(default, deserialize_with = "lenient_zero")]
+    pub count: f64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Objective {
+    #[default]
+    Score,
+    Money,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Options {
+    #[serde(default)]
+    pub objective: Objective,
+    #[serde(default)]
+    pub discards: bool,
+    #[serde(default)]
+    pub seeded: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -233,12 +270,17 @@ pub struct Snapshot {
     pub consumables: Vec<Consumable>,
     #[serde(default)]
     pub lobby: bool,
+    #[serde(default)]
+    pub options: Options,
 }
 
 pub fn parse(json: &[u8]) -> Result<Snapshot, String> {
     let s: Snapshot = serde_json::from_slice(json).map_err(|e| e.to_string())?;
     if s.schema != SCHEMA {
         return Err(format!("unsupported snapshot schema {}", s.schema));
+    }
+    if s.options.discards || s.options.seeded {
+        return Err("suggested discards and seeded mode aren't implemented".to_string());
     }
     Ok(s)
 }

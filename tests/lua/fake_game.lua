@@ -25,20 +25,16 @@ function M.joker(id, key, ability)
   }
 end
 
-function M.poison()
-  return setmetatable({}, {
-    __index = function() error("deck card was read", 2) end,
-    __pairs = function() error("deck card was read", 2) end,
-  })
-end
-
 function M.new()
   local deck_cards = {}
-  for i = 1, 44 do deck_cards[i] = M.poison() end
+  local suits = { "Spades", "Hearts", "Clubs", "Diamonds" }
+  for i = 1, 44 do deck_cards[i] = M.card(100 + i, (i % 13) + 2, suits[(i % 4) + 1]) end
   local playing = {}
   for i = 1, 52 do playing[i] = true end
   local g = {
-    STATES = { SELECTING_HAND = 1, HAND_PLAYED = 2 },
+    STATES = { SELECTING_HAND = 1, HAND_PLAYED = 2, DRAW_TO_HAND = 3, NEW_ROUND = 4 },
+    STAGES = { RUN = 1, MAIN_MENU = 2 },
+    STAGE = 1,
     STATE = 1,
     deck = { cards = deck_cards },
     playing_cards = playing,
