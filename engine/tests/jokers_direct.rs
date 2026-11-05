@@ -186,8 +186,8 @@ fn j_loyalty_card_every_sixth() {
             json!({"extra": {"Xmult": 4, "every": 5}, "hands_played_at_create": 0}),
         )]
     };
-    close(edit("AS", 0, l(), |v| v["round"]["hands_played"] = json!(4)), 64.0);
-    close(edit("AS", 0, l(), |v| v["round"]["hands_played"] = json!(0)), 16.0);
+    close(edit("AS", 0, l(), |v| v["round"]["hands_played"] = json!(5)), 64.0);
+    close(edit("AS", 0, l(), |v| v["round"]["hands_played"] = json!(4)), 16.0);
 }
 
 #[test]

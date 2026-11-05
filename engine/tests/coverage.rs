@@ -60,3 +60,10 @@ fn is_known_matches_the_table() {
     }
     assert!(!mortemqol_engine::jokers::is_known("j_modded"));
 }
+
+#[test]
+fn no_joker_is_pending() {
+    let pending: Vec<String> =
+        rows().into_iter().filter(|(_, s)| s == "pending").map(|(k, _)| k).collect();
+    assert!(pending.is_empty(), "{pending:?}");
+}

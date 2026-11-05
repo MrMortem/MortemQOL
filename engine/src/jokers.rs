@@ -191,28 +191,129 @@ pub fn space_odds(s: &Snapshot) -> f64 {
 }
 
 /// The joker whose effect the joker at `pos` produces, and whether it is copied.
+/// Follows SMODS.blueprint_effect: copying stops at a debuffed joker, itself, or a loop.
 fn resolve(s: &Snapshot, order: &[usize], pos: usize) -> Option<(usize, bool)> {
-    let index = order[pos];
-    let joker = &s.jokers[index];
-    (!joker.debuff && !joker.hidden).then_some((index, false))
+    let mut current = pos;
+    let mut copied = false;
+    for _ in 0..=order.len() {
+        let joker = &s.jokers[order[current]];
+        if joker.debuff || joker.hidden {
+            return None;
+        }
+        let next = match joker.key.as_deref() {
+            Some("j_blueprint") => current + 1,
+            Some("j_brainstorm") => 0,
+            _ => return Some((order[current], copied)),
+        };
+        if next >= order.len() || next == current {
+            return None;
+        }
+        current = next;
+        copied = true;
+    }
+    None
 }
 
 fn resolved_jokers(s: &Snapshot, order: &[usize]) -> Vec<(usize, bool)> {
     (0..order.len()).filter_map(|pos| resolve(s, order, pos)).collect()
 }
 
-pub fn space_triggers(_s: &Snapshot, _order: &[usize]) -> u32 {
-    0
+pub fn space_triggers(s: &Snapshot, order: &[usize]) -> u32 {
+    resolved_jokers(s, order).iter().filter(|(t, _)| s.jokers[*t].is("j_space")).count() as u32
 }
 
-pub fn before(_ctx: &mut ScoreCtx) {}
-
-pub fn card_repetitions(_ctx: &ScoreCtx, _card: usize) -> u32 {
-    0
+/// context.before, in joker order. Scaling here counts toward this hand.
+pub fn before(ctx: &mut ScoreCtx) {
+    let s = ctx.s;
+    let det = ctx.det;
+    for (t, copied) in resolved_jokers(s, ctx.order) {
+        let j = &s.jokers[t];
+        match j.key.as_deref().unwrap_or("") {
+            "j_trousers" if !copied && (det.has("Two Pair") || det.has("Full House")) => {
+                ctx.jstate[t].mult += j.extra(2.0)
+            }
+            "j_square" if !copied && ctx.played.len() == 4 => {
+                ctx.jstate[t].chips += j.extra_num("chip_mod", 4.0)
+            }
+            "j_runner" if !copied && det.has("Straight") => {
+                ctx.jstate[t].chips += j.extra_num("chip_mod", 15.0)
+            }
+            "j_midas_mask" if !copied => {
+                for &i in &det.scoring {
+                    if hand::is_face(&ctx.played[i], &ctx.rules) {
+                        ctx.played[i].to_mut().enh = Some("m_gold".to_string());
+                    }
+                }
+            }
+            "j_vampire" if !copied => {
+                let mut count = 0.0;
+                for &i in &det.scoring {
+                    if ctx.played[i].enh.is_some() && !ctx.played[i].debuff {
+                        ctx.played[i].to_mut().enh = None;
+                        count += 1.0;
+                    }
+                }
+                ctx.jstate[t].x_mult += j.extra(0.1) * count;
+            }
+            "j_todo_list"
+                if j.ab.get("to_do_poker_hand").and_then(|v| v.as_str()) == Some(det.name) =>
+            {
+                ctx.dollars += j.extra_num("dollars", 4.0)
+            }
+            "j_dna" if s.round.round_hands == 0.0 && ctx.played.len() == 1 => {
+                let copy = ctx.played[0].clone().into_owned();
+                ctx.held.push(copy);
+            }
+            "j_ride_the_bus" if !copied => {
+                if det.scoring.iter().any(|&i| hand::is_face(&ctx.played[i], &ctx.rules)) {
+                    ctx.jstate[t].mult = 0.0;
+                } else {
+                    ctx.jstate[t].mult += j.extra(1.0);
+                }
+            }
+            "j_obelisk" if !copied => {
+                let this = s.levels.get(det.name).map_or(0.0, |l| l.played) + 1.0;
+                let outplayed =
+                    s.levels.iter().any(|(k, l)| k != det.name && l.played >= this && l.visible);
+                if outplayed {
+                    ctx.jstate[t].x_mult += j.extra(0.2);
+                } else {
+                    ctx.jstate[t].x_mult = 1.0;
+                }
+            }
+            "j_green_joker" if !copied => ctx.jstate[t].mult += j.extra_num("hand_add", 1.0),
+            _ => {}
+        }
+    }
 }
 
-pub fn held_repetitions(_ctx: &ScoreCtx) -> u32 {
-    0
+/// context.repetition for a scoring card.
+pub fn card_repetitions(ctx: &ScoreCtx, i: usize) -> u32 {
+    let s = ctx.s;
+    let card = &ctx.played[i];
+    let mut reps = 0.0;
+    for (t, _) in resolved_jokers(s, ctx.order) {
+        let j = &s.jokers[t];
+        match j.key.as_deref().unwrap_or("") {
+            "j_sock_and_buskin" if hand::is_face(card, &ctx.rules) => reps += j.extra(1.0),
+            "j_hanging_chad" if ctx.det.scoring.first() == Some(&i) => reps += j.extra(2.0),
+            "j_dusk" if ctx.hands_left == 0.0 => reps += j.extra(1.0),
+            "j_selzer" => reps += 1.0,
+            "j_hack" if is_rank(card, &[2, 3, 4, 5]) => reps += j.extra(1.0),
+            _ => {}
+        }
+    }
+    reps as u32
+}
+
+/// context.repetition for a held card.
+pub fn held_repetitions(ctx: &ScoreCtx) -> u32 {
+    let s = ctx.s;
+    resolved_jokers(s, ctx.order)
+        .iter()
+        .filter(|(t, _)| s.jokers[*t].is("j_mime"))
+        .map(|(t, _)| s.jokers[*t].extra(1.0) as u32)
+        .sum()
 }
 
 fn is_rank(card: &Card, ranks: &[i32]) -> bool {
@@ -224,14 +325,22 @@ fn first_face(ctx: &ScoreCtx) -> Option<usize> {
 }
 
 /// context.individual for a scoring card.
-pub fn per_card(ctx: &mut ScoreCtx, i: usize, _lucky_p: f64) {
+pub fn per_card(ctx: &mut ScoreCtx, i: usize, lucky_p: f64) {
     let s = ctx.s;
-    for (t, _copied) in resolved_jokers(s, ctx.order) {
+    for (t, copied) in resolved_jokers(s, ctx.order) {
         let j = &s.jokers[t];
         let rules = ctx.rules;
         let card = ctx.played[i].clone();
         let face = hand::is_face(&card, &rules);
         match j.key.as_deref().unwrap_or("") {
+            "j_hiker" => ctx.perma_add[i] += j.extra(5.0),
+            "j_lucky_cat" if !copied && lucky_p > 0.0 => {
+                let w = ctx.weight(lucky_p);
+                ctx.jstate[t].x_mult += j.extra(0.25) * w;
+            }
+            "j_wee" if !copied && is_rank(&card, &[2]) => {
+                ctx.jstate[t].chips += j.extra_num("chip_mod", 8.0)
+            }
             "j_photograph" if first_face(ctx) == Some(i) => ctx.x_mult(j.extra(2.0)),
             "j_idol"
                 if hand::rank_of(&card) == Some(s.round.idol.rank)
@@ -367,7 +476,7 @@ fn seeing_double(ctx: &ScoreCtx) -> bool {
 
 fn loyalty_value(ctx: &ScoreCtx, j: &Joker) -> f64 {
     let every = j.extra_num("every", 5.0);
-    let played = ctx.s.round.hands_played + 1.0 - j.num("hands_played_at_create", 0.0);
+    let played = ctx.s.round.hands_played - j.num("hands_played_at_create", 0.0);
     (every - 1.0 - played).rem_euclid(every + 1.0)
 }
 
