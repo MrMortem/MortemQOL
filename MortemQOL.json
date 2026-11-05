@@ -2,11 +2,14 @@
   "id": "MortemQOL",
   "name": "MortemQOL",
   "display_name": "MortemQOL",
-  "author": ["MrMortem"],
+  "author": [
+    "MrMortem"
+  ],
   "description": "Live calculator that finds your highest-scoring play and best joker order.",
   "prefix": "MortemQOL",
   "main_file": "MortemQOL.lua",
   "version": "0.0.1",
-  "dependencies": ["Steamodded (>=1.0.0~BETA-1814a)"],
-  "icon_path": "icon.png"
+  "dependencies": [
+    "Steamodded (>=1.0.0~BETA-1814a)"
+  ]
 }
