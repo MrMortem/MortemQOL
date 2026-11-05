@@ -32,7 +32,9 @@ function M.new()
   local playing = {}
   for i = 1, 52 do playing[i] = true end
   local g = {
-    STATES = { SELECTING_HAND = 1, HAND_PLAYED = 2 },
+    STATES = { SELECTING_HAND = 1, HAND_PLAYED = 2, DRAW_TO_HAND = 3, NEW_ROUND = 4 },
+    STAGES = { RUN = 1, MAIN_MENU = 2 },
+    STAGE = 1,
     STATE = 1,
     deck = { cards = deck_cards },
     playing_cards = playing,

@@ -188,7 +188,13 @@ end
 -- File switches for checking the gear without a mouse: MortemQOL/menu opens the menu, and
 -- MortemQOL/assist_off turns assistance off.
 local menu_opened = false
+local restarted = false
 local function dev_switches()
+  if love.filesystem.getInfo("MortemQOL/restart") and not restarted and G.STAGE == G.STAGES.RUN then
+    restarted = true
+    log("forced restart")
+    start_run()
+  end
   if love.filesystem.getInfo("MortemQOL/menu") and not menu_opened and G.STAGE == G.STAGES.RUN then
     menu_opened = true
     G.FUNCS.mqol_gear()

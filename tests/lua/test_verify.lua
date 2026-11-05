@@ -79,7 +79,7 @@ function tests.tick_waits_for_hand_played_to_end()
   G.GAME.dollars = 13
   MQOL.verify.tick()
   assert(MQOL.verify.counts().match == before, "compared too early")
-  G.STATE = G.STATES.SELECTING_HAND
+  G.STATE = G.STATES.DRAW_TO_HAND
   MQOL.verify.tick()
   assert(MQOL.verify.counts().match == before + 1)
   MQOL.verify.tick()
@@ -89,7 +89,7 @@ end
 function tests.money_mismatch_writes_line_with_actual_money()
   local written = play_and_score()
   G.GAME.dollars = 99
-  G.STATE = G.STATES.SELECTING_HAND
+  G.STATE = G.STATES.NEW_ROUND
   MQOL.verify.tick()
   assert(#written == 1 and written[1].file == "verify.jsonl")
   local line = MQOL.json.decode(written[1].text)
@@ -101,11 +101,40 @@ function tests.new_play_discards_uncompared_money()
   play_and_score()
   local before = MQOL.verify.counts().match
   MQOL.verify.before_play()
-  G.STATE = G.STATES.SELECTING_HAND
+  G.STATE = G.STATES.DRAW_TO_HAND
   G.GAME.dollars = 500
   MQOL.verify.tick()
   assert(MQOL.verify.counts().mismatch == 0, "compared a stale balance")
   assert(MQOL.verify.counts().match == before)
+end
+
+function tests.quit_mid_hand_discards_money_comparison()
+  local written = play_and_score()
+  -- Game:delete_run sets the state to -1, drops unpaid money, and a new game starts.
+  G.STATE = -1
+  G.GAME = { dollars = 4 }
+  MQOL.verify.tick()
+  G.STATE = G.STATES.DRAW_TO_HAND
+  MQOL.verify.tick()
+  assert(MQOL.verify.counts().mismatch == 0, "false mismatch after quitting")
+  assert(#written == 0)
+end
+
+function tests.leaving_the_run_discards_money_comparison()
+  play_and_score()
+  G.STAGE = G.STAGES.MAIN_MENU
+  G.STATE = G.STATES.DRAW_TO_HAND
+  G.GAME = { dollars = 4 }
+  MQOL.verify.tick()
+  assert(MQOL.verify.counts().mismatch == 0)
+end
+
+function tests.round_end_state_still_compares()
+  play_and_score()
+  G.GAME.dollars = 13
+  G.STATE = G.STATES.NEW_ROUND
+  MQOL.verify.tick()
+  assert(MQOL.verify.counts().match == 2)
 end
 
 function tests.assist_off_records_nothing()
@@ -122,7 +151,7 @@ function tests.tick_finishes_a_play_when_assist_goes_off()
   local before = MQOL.verify.counts().match
   MQOL.settings.init({ assist = false })
   G.GAME.dollars = 13
-  G.STATE = G.STATES.SELECTING_HAND
+  G.STATE = G.STATES.DRAW_TO_HAND
   MQOL.verify.tick()
   assert(MQOL.verify.counts().match == before + 1)
 end

@@ -3,13 +3,16 @@ local M = {}
 
 local MODES = { score = true, money = true }
 local config = nil
+local owner = nil
 
-function M._save(saved)
-  SMODS.save_mod_config(saved)
+function M._save()
+  -- This takes the mod, not its config, and reports failure only through its return value.
+  if owner then SMODS.save_mod_config(owner) end
 end
 
-function M.init(saved)
+function M.init(saved, mod)
   config = saved
+  owner = mod
   if type(config.assist) ~= "boolean" then
     -- v1.0 called this show_panel.
     config.assist = config.show_panel ~= false
@@ -19,7 +22,7 @@ function M.init(saved)
 end
 
 local function save()
-  pcall(M._save, config)
+  pcall(M._save)
 end
 
 function M.assist()

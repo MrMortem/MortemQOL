@@ -87,6 +87,15 @@ function tests.unavailable_status()
   eq(t.status, "Engine unavailable"); eq(t.hand, ""); eq(t.money, ""); eq(t.selection, ""); eq(t.gain, "")
 end
 
+function tests.joker_badges_follow_the_shown_gain()
+  assert(panel_text.show_joker_badges(result({ gain = 5 }), "score") == true)
+  assert(panel_text.show_joker_badges(result({ gain_money = 8 }), "money") == true)
+  assert(panel_text.show_joker_badges(result({ gain = 5 }), "money") == true)
+  assert(panel_text.show_joker_badges(result({ gain_money = 8 }), "score") == false)
+  assert(panel_text.show_joker_badges(result({}), "money") == false)
+  assert(panel_text.show_joker_badges(nil, "money") == false)
+end
+
 function tests.no_play_message()
   local t = panel_text.build({ status = "ready", result = { best = nil, approximate = {} } }, "score", 0)
   eq(t.hand, "No scoring play")

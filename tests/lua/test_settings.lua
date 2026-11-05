@@ -56,6 +56,22 @@ function tests.works_before_init()
   assert(s.assist() == true and s.mode() == "score")
 end
 
+function tests.saves_through_the_real_signature()
+  -- SMODS.save_mod_config takes the mod and needs mod.config.
+  local wrote = nil
+  SMODS = { save_mod_config = function(mod)
+    assert(mod.config, "needs the mod, not its config")
+    wrote = mod.config
+    return true
+  end }
+  local settings = dofile("src/settings.lua")
+  local mod = { config = {} }
+  settings.init(mod.config, mod)
+  settings.set_mode("money")
+  SMODS = nil
+  assert(wrote and wrote.mode == "money", "setting was not saved")
+end
+
 function tests.save_failure_does_not_raise()
   local s = fresh({})
   s._save = function() error("disk full") end

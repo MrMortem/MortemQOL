@@ -115,8 +115,8 @@ local function by_id(cards, id)
   return nil
 end
 
-local function refresh_badges(result)
-  local jokers = result and MQOL.format.positive(result.gain) and result.joker_order or nil
+local function refresh_badges(result, mode)
+  local jokers = MQOL.panel_text.show_joker_badges(result, mode) and result.joker_order or nil
   local cards = result and result.card_order_matters and result.best and result.best.play or nil
   local signature = table.concat(jokers or {}, ",") .. "|" .. table.concat(cards or {}, ",")
   if signature == badge_signature then return end
@@ -173,7 +173,7 @@ function M.refresh()
     reason_shown = reason_key
   end
   set_text(state, mode)
-  refresh_badges(state.result)
+  refresh_badges(state.result, mode)
   remember_position()
 end
 

@@ -4,6 +4,13 @@ local M = {}
 local ATLAS = "MortemQOL_gear"
 -- From the window's top-left corner, above the blind info.
 local GEAR_X, GEAR_Y = 0.35, 0.25
+-- The game ignores the cursor more than 2 units outside the room, which wide windows would
+-- otherwise put the gear past.
+local MIN_ROOM_OFFSET = -1.5
+
+local function room_position(window_x, window_y)
+  return math.max(window_x - G.ROOM.T.x, MIN_ROOM_OFFSET), math.max(window_y - G.ROOM.T.y, MIN_ROOM_OFFSET)
+end
 
 local gear = nil
 local menu = nil
@@ -55,7 +62,8 @@ local function open_menu()
     },
     config = { align = "cm", offset = { x = 0, y = 0 } },
   })
-  menu:hard_set_T(GEAR_X - G.ROOM.T.x, GEAR_Y - G.ROOM.T.y + 0.75, menu.T.w, menu.T.h)
+  local x, y = room_position(GEAR_X, GEAR_Y)
+  menu:hard_set_T(x, y + 0.75, menu.T.w, menu.T.h)
 end
 
 local function gear_face()
@@ -82,7 +90,8 @@ local function create_gear()
     },
     config = { align = "cm", offset = { x = 0, y = 0 } },
   })
-  gear:hard_set_T(GEAR_X - G.ROOM.T.x, GEAR_Y - G.ROOM.T.y, gear.T.w, gear.T.h)
+  local x, y = room_position(GEAR_X, GEAR_Y)
+  gear:hard_set_T(x, y, gear.T.w, gear.T.h)
 end
 
 local function destroy_all()
@@ -97,6 +106,11 @@ function M.refresh()
     if gear then destroy_all() end
     return
   end
+  -- Restarting a run removes stage objects without leaving the run stage.
+  if gear and gear.REMOVED then gear = nil end
+  if menu and menu.REMOVED then menu = nil end
+  -- Frames pass between a restart's delete_run and start_run. The HUD returns once it's safe.
+  if not G.HUD then return end
   if not gear then create_gear() end
   if menu_open and (not menu or menu_values ~= current_values()) then open_menu() end
   if not menu_open and menu then destroy_menu() end

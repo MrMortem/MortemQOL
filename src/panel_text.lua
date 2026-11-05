@@ -34,6 +34,13 @@ local function status_line(state, mismatches)
   return table.concat(parts, " | ")
 end
 
+-- Whether the panel is offering a joker order, and so needs numbers on the jokers.
+function M.show_joker_badges(result, mode)
+  if not result then return false end
+  local format = MQOL.format
+  return format.positive(result.gain) or (mode == "money" and format.positive(result.gain_money))
+end
+
 function M.build(state, mode, mismatches)
   local format = MQOL.format
   local text = blank()

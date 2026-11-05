@@ -96,12 +96,16 @@ function M.after_score(actual)
   end)
 end
 
--- Call every frame. Compares money once the game has left its hand-played state, which is after
--- the hand's money events and before end-of-round payouts.
+-- Call every frame. Compares money when the hand finishes normally, which is after its money
+-- events and before end-of-round payouts. Any other way out, such as quitting mid-hand, drops
+-- unpaid money and can replace the game, so that comparison is discarded.
 function M.tick()
   local entry = money_pending
   if not entry or G.STATE == G.STATES.HAND_PLAYED then return end
   money_pending = nil
+  local finished = G.STAGE == G.STAGES.RUN
+    and (G.STATE == G.STATES.DRAW_TO_HAND or G.STATE == G.STATES.NEW_ROUND)
+  if not finished then return end
   pcall(function()
     local actual = G.GAME.dollars - entry.balance
     local outcome = M.compare_money(entry.prediction, actual)

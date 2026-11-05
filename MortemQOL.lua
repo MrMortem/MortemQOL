@@ -8,7 +8,7 @@ local function load_module(name)
 end
 
 MQOL.settings = load_module("settings")
-MQOL.settings.init(mod.config)
+MQOL.settings.init(mod.config, mod)
 MQOL.json = load_module("json")
 MQOL.bridge = load_module("bridge")
 MQOL.snapshot = load_module("snapshot")
