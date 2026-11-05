@@ -198,14 +198,14 @@ fn joker_orders(s: &Snapshot) -> Vec<Vec<usize>> {
 /// Improves an order by swapping pairs until no swap helps.
 fn hill_climb(s: &Snapshot, play: &[usize], cancel: &dyn Fn() -> bool) -> (Vec<usize>, f64) {
     let mut order: Vec<usize> = (0..s.jokers.len()).collect();
-    let mut best = score_expected(s, play, &order);
+    let mut best = score_expected(s, play, &order).score;
     let mut improved = true;
     while improved && !cancel() {
         improved = false;
         for a in 0..order.len() {
             for b in a + 1..order.len() {
                 order.swap(a, b);
-                let value = score_expected(s, play, &order);
+                let value = score_expected(s, play, &order).score;
                 if beats(value, 0.0, best, 0.0) {
                     best = value;
                     improved = true;
@@ -261,7 +261,7 @@ impl Progress<'_> {
         let gain = if c.order == identity {
             0.0
         } else {
-            (scored.expected - score_expected(s, &c.play, &identity)).max(0.0)
+            (scored.expected - score_expected(s, &c.play, &identity).score).max(0.0)
         };
         let blind_pct =
             if s.blind.target > 0.0 { scored.expected / s.blind.target * 100.0 } else { 0.0 };
@@ -336,7 +336,7 @@ pub fn run(s: &Snapshot, cancel: &dyn Fn() -> bool, publish: &mut dyn FnMut(Sear
                     return;
                 }
                 for order in orders.iter().skip(1) {
-                    let value = score_expected(s, &candidate.play, order);
+                    let value = score_expected(s, &candidate.play, order).score;
                     if beats(value, 0.0, candidate.expected, 0.0) {
                         candidate.expected = value;
                         candidate.order = order.clone();
@@ -372,7 +372,7 @@ pub fn run(s: &Snapshot, cancel: &dyn Fn() -> bool, publish: &mut dyn FnMut(Sear
         }
         for perm in permutations(candidate.play.len()).iter().skip(1) {
             let play: Vec<usize> = perm.iter().map(|&i| candidate.play[i]).collect();
-            let value = score_expected(s, &play, &candidate.order);
+            let value = score_expected(s, &play, &candidate.order).score;
             if beats(value, 0.0, best.expected, 0.0) {
                 best =
                     Candidate { play, order: candidate.order.clone(), expected: value, floor: 0.0 };
