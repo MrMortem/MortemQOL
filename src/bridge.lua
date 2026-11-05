@@ -45,7 +45,13 @@ function M.load(mod_path)
     end
     return loaded
   end)
-  if not ok then return false, tostring(result) end
+  if not ok then
+    local message = tostring(result)
+    if ffi.os == "OSX" and not message:find("ABI") then
+      message = message .. " (if you extracted the zip by hand, macOS quarantine may be blocking it; import the zip into r2modmac instead)"
+    end
+    return false, message
+  end
   lib = result
   buf = ffi.new("uint8_t[?]", buf_cap)
   out_len = ffi.new("size_t[1]")

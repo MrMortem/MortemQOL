@@ -16,6 +16,13 @@ assert(ok == false and err:find("ABI"), "wrong ABI should fail: " .. tostring(er
 assert(bridge.available() == false)
 bridge._loader = real_loader
 
+-- on macOS a blocked library explains what to do
+bridge._loader = function() error("dlopen failed: not valid") end
+ok, err = bridge.load("/any")
+assert(ok == false)
+if ffi.os == "OSX" then assert(err:find("quarantine"), "should hint at quarantine: " .. err) end
+bridge._loader = real_loader
+
 -- the real library loads from the mod's native folder
 local tmp = os.tmpname(); os.remove(tmp)
 local sub = ffi.os == "OSX" and "macos" or "windows"
