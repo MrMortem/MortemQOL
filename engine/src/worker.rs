@@ -26,7 +26,9 @@ struct Latest {
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 static CURRENT: AtomicU64 = AtomicU64::new(0);
 static LATEST: Mutex<Option<Latest>> = Mutex::new(None);
-static JOBS: OnceLock<Mutex<Sender<(u64, Vec<u8>)>>> = OnceLock::new();
+type Job = (u64, Vec<u8>);
+
+static JOBS: OnceLock<Mutex<Sender<Job>>> = OnceLock::new();
 
 fn latest() -> MutexGuard<'static, Option<Latest>> {
     LATEST.lock().unwrap_or_else(|e| e.into_inner())
@@ -57,7 +59,7 @@ fn process(id: u64, json: &[u8]) {
     });
 }
 
-fn worker_loop(jobs: std::sync::mpsc::Receiver<(u64, Vec<u8>)>) {
+fn worker_loop(jobs: std::sync::mpsc::Receiver<Job>) {
     while let Ok((mut id, mut json)) = jobs.recv() {
         // Only the newest queued request matters.
         while let Ok((next_id, next_json)) = jobs.try_recv() {
