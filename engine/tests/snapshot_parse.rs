@@ -90,3 +90,55 @@ fn naneinf_numbers_parse_as_infinity() {
     assert!(s.round.dollars.is_infinite());
     assert!(s.levels["High Card"].chips.is_infinite());
 }
+
+#[test]
+fn missing_options_mean_score() {
+    use mortemqol_engine::snapshot::Objective;
+    let s = parse(snap_json("AS").to_string().as_bytes()).unwrap();
+    assert_eq!(s.options.objective, Objective::Score);
+    assert!(!s.options.discards && !s.options.seeded);
+}
+
+#[test]
+fn money_objective_parses() {
+    use mortemqol_engine::snapshot::Objective;
+    let mut v = snap_json("AS");
+    v["options"] = json!({"objective": "money", "discards": false, "seeded": false});
+    assert_eq!(parse(v.to_string().as_bytes()).unwrap().options.objective, Objective::Money);
+}
+
+#[test]
+fn discards_true_is_error() {
+    let mut v = snap_json("AS");
+    v["options"] = json!({"objective": "score", "discards": true});
+    assert!(parse(v.to_string().as_bytes()).is_err());
+}
+
+#[test]
+fn seeded_true_is_error() {
+    let mut v = snap_json("AS");
+    v["options"] = json!({"objective": "score", "seeded": true});
+    assert!(parse(v.to_string().as_bytes()).is_err());
+}
+
+#[test]
+fn unknown_objective_is_error() {
+    let mut v = snap_json("AS");
+    v["options"] = json!({"objective": "fame"});
+    assert!(parse(v.to_string().as_bytes()).is_err());
+}
+
+#[test]
+fn deck_contents_parse() {
+    let mut v = snap_json("AS");
+    v["deck"]["contents"] = json!([{"rank": 14, "suit": "Spades", "enh": "m_glass", "count": 2}]);
+    let s = parse(v.to_string().as_bytes()).unwrap();
+    assert_eq!(s.deck.contents[0].rank, 14);
+    assert_eq!(s.deck.contents[0].count, 2.0);
+    assert_eq!(s.deck.contents[0].enh.as_deref(), Some("m_glass"));
+}
+
+#[test]
+fn missing_deck_contents_is_empty() {
+    assert!(parse(snap_json("AS").to_string().as_bytes()).unwrap().deck.contents.is_empty());
+}

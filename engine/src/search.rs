@@ -1,6 +1,6 @@
 //! Finds the best play: all plays first, then joker orders, then card orders.
-use crate::score::{approximate_tags, score_expected, score_play, to_json_number};
-use crate::snapshot::Snapshot;
+use crate::score::{approximate_tags, score_expected, score_play, to_json_number, Expected};
+use crate::snapshot::{Objective, Snapshot};
 use serde_json::{json, Value};
 
 const MAX_ORDER_EVALS: usize = 200_000;
@@ -18,6 +18,9 @@ pub struct Best {
     pub expected: f64,
     pub ceiling: f64,
     pub blind_pct: f64,
+    pub money_floor: f64,
+    pub money_expected: f64,
+    pub money_ceiling: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +32,11 @@ pub struct SearchResult {
     pub joker_order: Vec<i64>,
     pub current_order_expected: f64,
     pub gain: f64,
+    pub gain_money: f64,
+    /// The recommended play is blocked by the blind and scores zero.
+    pub blocked: bool,
+    /// Money mode's recommendation won't beat the blind on the last hand.
+    pub blind_warning: bool,
     pub order_exact: bool,
     pub card_order_matters: bool,
     pub approximate: Vec<String>,
@@ -45,6 +53,9 @@ impl SearchResult {
                 "expected": to_json_number(b.expected),
                 "ceiling": to_json_number(b.ceiling),
                 "blind_pct": to_json_number(b.blind_pct),
+                "money_floor": to_json_number(b.money_floor),
+                "money_expected": to_json_number(b.money_expected),
+                "money_ceiling": to_json_number(b.money_ceiling),
             })
         });
         json!({
@@ -54,6 +65,9 @@ impl SearchResult {
             "joker_order": self.joker_order,
             "current_order_expected": to_json_number(self.current_order_expected),
             "gain": to_json_number(self.gain),
+            "gain_money": to_json_number(self.gain_money),
+            "blocked": self.blocked,
+            "blind_warning": self.blind_warning,
             "order_exact": self.order_exact,
             "card_order_matters": self.card_order_matters,
             "approximate": self.approximate,
@@ -68,20 +82,68 @@ struct Candidate {
     order: Vec<usize>,
     expected: f64,
     floor: f64,
+    money: f64,
 }
 
-/// True when `a` should replace `b`: higher expected score, then higher floor.
-fn beats(a_expected: f64, a_floor: f64, b_expected: f64, b_floor: f64) -> bool {
-    if a_expected.is_nan() {
-        return false;
+/// What a candidate is compared by.
+#[derive(Clone, Copy)]
+struct Rank {
+    money: f64,
+    score: f64,
+    floor: f64,
+}
+
+impl Candidate {
+    /// Its rank for comparing against evaluations that have no floor yet.
+    fn plain_rank(&self) -> Rank {
+        Rank { money: self.money, score: self.expected, floor: 0.0 }
     }
-    if b_expected.is_nan() {
-        return true;
+}
+
+/// A rank for an evaluation that has no floor yet.
+fn plain_rank(value: Expected) -> Rank {
+    Rank { money: value.money, score: value.score, floor: 0.0 }
+}
+
+/// Clearly above, ignoring floating-point noise. `None` means a tie.
+fn clearly_above(a: f64, b: f64) -> Option<bool> {
+    if a.is_nan() || b.is_nan() {
+        return if a.is_nan() && b.is_nan() { None } else { Some(b.is_nan()) };
     }
-    if a_expected == b_expected || (a_expected - b_expected).abs() <= EPS * b_expected.abs() {
-        return a_floor > b_floor + EPS * b_floor.abs();
+    if a == b || (a - b).abs() <= EPS * b.abs() {
+        return None;
     }
-    a_expected > b_expected
+    Some(a > b)
+}
+
+/// True when `a` should replace `b`, by the objective's ranking.
+fn beats(objective: Objective, a: Rank, b: Rank) -> bool {
+    if objective == Objective::Money {
+        if let Some(above) = clearly_above(a.money, b.money) {
+            return above;
+        }
+    }
+    if let Some(above) = clearly_above(a.score, b.score) {
+        return above;
+    }
+    clearly_above(a.floor, b.floor).unwrap_or(false)
+}
+
+/// Rounds away floating-point noise, so a sort treats near-equal values as equal. NaN sorts lowest.
+fn sort_key(x: f64) -> f64 {
+    if x.is_nan() {
+        return f64::NEG_INFINITY;
+    }
+    if x == 0.0 || x.is_infinite() {
+        return x;
+    }
+    let scale = 10f64.powi(11 - x.abs().log10().floor() as i32);
+    let rounded = (x * scale).round() / scale;
+    if rounded.is_finite() {
+        rounded
+    } else {
+        x
+    }
 }
 
 /// Every legal selection of 1 to 5 known cards that includes all forced cards.
@@ -196,17 +258,18 @@ fn joker_orders(s: &Snapshot) -> Vec<Vec<usize>> {
 }
 
 /// Improves an order by swapping pairs until no swap helps.
-fn hill_climb(s: &Snapshot, play: &[usize], cancel: &dyn Fn() -> bool) -> (Vec<usize>, f64) {
+fn hill_climb(s: &Snapshot, play: &[usize], cancel: &dyn Fn() -> bool) -> (Vec<usize>, Expected) {
+    let objective = s.options.objective;
     let mut order: Vec<usize> = (0..s.jokers.len()).collect();
-    let mut best = score_expected(s, play, &order).score;
+    let mut best = score_expected(s, play, &order);
     let mut improved = true;
     while improved && !cancel() {
         improved = false;
         for a in 0..order.len() {
             for b in a + 1..order.len() {
                 order.swap(a, b);
-                let value = score_expected(s, play, &order).score;
-                if beats(value, 0.0, best, 0.0) {
+                let value = score_expected(s, play, &order);
+                if beats(objective, plain_rank(value), plain_rank(best)) {
                     best = value;
                     improved = true;
                 } else {
@@ -218,15 +281,16 @@ fn hill_climb(s: &Snapshot, play: &[usize], cancel: &dyn Fn() -> bool) -> (Vec<u
     (order, best)
 }
 
-fn top_first(candidates: &mut [Candidate]) {
+fn top_first(objective: Objective, candidates: &mut [Candidate]) {
     candidates.sort_by(|a, b| {
-        if beats(a.expected, a.floor, b.expected, b.floor) {
-            std::cmp::Ordering::Less
-        } else if beats(b.expected, b.floor, a.expected, a.floor) {
-            std::cmp::Ordering::Greater
+        let money = if objective == Objective::Money {
+            sort_key(b.money).total_cmp(&sort_key(a.money))
         } else {
             std::cmp::Ordering::Equal
-        }
+        };
+        money
+            .then_with(|| sort_key(b.expected).total_cmp(&sort_key(a.expected)))
+            .then_with(|| sort_key(b.floor).total_cmp(&sort_key(a.floor)))
     });
 }
 
@@ -250,6 +314,9 @@ impl Progress<'_> {
                 joker_order: joker_ids,
                 current_order_expected: 0.0,
                 gain: 0.0,
+                gain_money: 0.0,
+                blocked: false,
+                blind_warning: false,
                 order_exact: self.order_exact,
                 card_order_matters: false,
                 approximate: self.tags.clone(),
@@ -258,11 +325,19 @@ impl Progress<'_> {
         let scored = score_play(s, &c.play, &c.order);
         // What the joker order alone buys, for the same cards in the same order.
         let identity: Vec<usize> = (0..s.jokers.len()).collect();
-        let gain = if c.order == identity {
-            0.0
+        let (gain, gain_money) = if c.order == identity {
+            (0.0, 0.0)
         } else {
-            (scored.expected - score_expected(s, &c.play, &identity).score).max(0.0)
+            let current = score_expected(s, &c.play, &identity);
+            (
+                (scored.expected - current.score).max(0.0),
+                (scored.money_expected - current.money).max(0.0),
+            )
         };
+        let blind_warning = s.options.objective == Objective::Money
+            && s.round.hands_left <= 1.0
+            && s.round.chips + scored.expected < s.blind.target;
+        let blocked = !scored.legal;
         let blind_pct =
             if s.blind.target > 0.0 { scored.expected / s.blind.target * 100.0 } else { 0.0 };
         SearchResult {
@@ -276,10 +351,16 @@ impl Progress<'_> {
                 expected: scored.expected,
                 ceiling: scored.ceiling,
                 blind_pct,
+                money_floor: scored.money_floor,
+                money_expected: scored.money_expected,
+                money_ceiling: scored.money_ceiling,
             }),
             joker_order: c.order.iter().map(|&i| s.jokers[i].id).collect(),
             current_order_expected: self.current_order_expected,
             gain,
+            gain_money,
+            blocked,
+            blind_warning,
             order_exact: self.order_exact,
             card_order_matters: self.card_order_matters,
             approximate: self.tags.clone(),
@@ -290,6 +371,7 @@ impl Progress<'_> {
 /// Runs the search, publishing after each stage. Stops without a final result when `cancel`
 /// returns true.
 pub fn run(s: &Snapshot, cancel: &dyn Fn() -> bool, publish: &mut dyn FnMut(SearchResult)) {
+    let objective = s.options.objective;
     let identity: Vec<usize> = (0..s.jokers.len()).collect();
     let mut progress = Progress {
         s,
@@ -306,16 +388,18 @@ pub fn run(s: &Snapshot, cancel: &dyn Fn() -> bool, publish: &mut dyn FnMut(Sear
             return;
         }
         let r = score_play(s, &play, &identity);
-        if r.legal {
+        let keep = r.legal || (objective == Objective::Money && r.money_expected > 0.0);
+        if keep {
             candidates.push(Candidate {
                 play,
                 order: identity.clone(),
                 expected: r.expected,
                 floor: r.floor,
+                money: r.money_expected,
             });
         }
     }
-    top_first(&mut candidates);
+    top_first(objective, &mut candidates);
     let Some(first) = candidates.first().cloned() else {
         publish(progress.result(1, true, None));
         return;
@@ -336,9 +420,10 @@ pub fn run(s: &Snapshot, cancel: &dyn Fn() -> bool, publish: &mut dyn FnMut(Sear
                     return;
                 }
                 for order in orders.iter().skip(1) {
-                    let value = score_expected(s, &candidate.play, order).score;
-                    if beats(value, 0.0, candidate.expected, 0.0) {
-                        candidate.expected = value;
+                    let value = score_expected(s, &candidate.play, order);
+                    if beats(objective, plain_rank(value), candidate.plain_rank()) {
+                        candidate.expected = value.score;
+                        candidate.money = value.money;
                         candidate.order = order.clone();
                     }
                 }
@@ -349,8 +434,9 @@ pub fn run(s: &Snapshot, cancel: &dyn Fn() -> bool, publish: &mut dyn FnMut(Sear
                     return;
                 }
                 let (order, value) = hill_climb(s, &candidate.play, cancel);
-                if beats(value, 0.0, candidate.expected, 0.0) {
-                    candidate.expected = value;
+                if beats(objective, plain_rank(value), candidate.plain_rank()) {
+                    candidate.expected = value.score;
+                    candidate.money = value.money;
                     candidate.order = order;
                 }
             }
@@ -360,7 +446,7 @@ pub fn run(s: &Snapshot, cancel: &dyn Fn() -> bool, publish: &mut dyn FnMut(Sear
                 candidate.floor = score_play(s, &candidate.play, &candidate.order).floor;
             }
         }
-        top_first(&mut candidates);
+        top_first(objective, &mut candidates);
         publish(progress.result(2, false, candidates.first()));
     }
 
@@ -372,10 +458,15 @@ pub fn run(s: &Snapshot, cancel: &dyn Fn() -> bool, publish: &mut dyn FnMut(Sear
         }
         for perm in permutations(candidate.play.len()).iter().skip(1) {
             let play: Vec<usize> = perm.iter().map(|&i| candidate.play[i]).collect();
-            let value = score_expected(s, &play, &candidate.order).score;
-            if beats(value, 0.0, best.expected, 0.0) {
-                best =
-                    Candidate { play, order: candidate.order.clone(), expected: value, floor: 0.0 };
+            let value = score_expected(s, &play, &candidate.order);
+            if beats(objective, plain_rank(value), best.plain_rank()) {
+                best = Candidate {
+                    play,
+                    order: candidate.order.clone(),
+                    expected: value.score,
+                    floor: 0.0,
+                    money: value.money,
+                };
                 progress.card_order_matters = true;
             }
         }

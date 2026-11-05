@@ -219,6 +219,167 @@ fn naneinf_result_serializes() {
     assert_eq!(out["best"]["expected"], json!("naneinf"));
 }
 
+fn money_mode(v: &mut Value) {
+    v["options"] = json!({"objective": "money"});
+}
+
+fn gold(v: &mut Value, index: usize) {
+    v["hand"][index]["seal"] = json!("Gold");
+}
+
+#[test]
+fn money_mode_prefers_money_over_score() {
+    let mut v = snap_json("AS AH 2D");
+    gold(&mut v, 2);
+    money_mode(&mut v);
+    let best = last(&to_snapshot(&v)).best.unwrap();
+    close(best.money_expected, 3.0);
+    assert_eq!(best.play, vec![3]);
+    close(best.expected, 7.0);
+}
+
+#[test]
+fn money_ties_go_to_score() {
+    let mut v = snap_json("2D 3H");
+    gold(&mut v, 0);
+    gold(&mut v, 1);
+    money_mode(&mut v);
+    let best = last(&to_snapshot(&v)).best.unwrap();
+    close(best.money_expected, 3.0);
+    close(best.expected, 8.0);
+}
+
+#[test]
+fn no_money_matches_score_mode() {
+    let mut compared = 0;
+    for s in table() {
+        if s.hand.iter().any(|c| c.has_enh("m_lucky")) {
+            continue;
+        }
+        let score = last(&s).best.unwrap();
+        let mut money = s.clone();
+        money.options.objective = mortemqol_engine::snapshot::Objective::Money;
+        let best = last(&money).best.unwrap();
+        close(best.expected, score.expected);
+        assert_eq!(best.play, score.play);
+        compared += 1;
+    }
+    assert!(compared > 0);
+}
+
+#[test]
+fn score_mode_ignores_money() {
+    let mut v = snap_json("AS AH 2D");
+    gold(&mut v, 2);
+    let best = last(&to_snapshot(&v)).best.unwrap();
+    assert_eq!(best.hand, "Pair");
+    close(best.expected, 64.0);
+}
+
+fn psychic_matador() -> Value {
+    let mut v = with_jokers("AS AH", vec![j("j_matador", json!({"extra": 8}))]);
+    v["blind"]["key"] = json!("bl_psychic");
+    v
+}
+
+#[test]
+fn blocked_never_recommended_in_score_mode() {
+    assert!(last(&to_snapshot(&psychic_matador())).best.is_none());
+}
+
+#[test]
+fn blocked_recommended_in_money_mode() {
+    let mut v = psychic_matador();
+    money_mode(&mut v);
+    let r = last(&to_snapshot(&v));
+    assert!(r.blocked);
+    let best = r.best.unwrap();
+    close(best.money_expected, 8.0);
+    close(best.expected, 0.0);
+}
+
+#[test]
+fn blocked_zero_money_is_not_recommended() {
+    let mut v = snap_json("AS AH");
+    v["blind"]["key"] = json!("bl_psychic");
+    money_mode(&mut v);
+    assert!(last(&to_snapshot(&v)).best.is_none());
+}
+
+#[test]
+fn money_joker_order_search() {
+    let mut v = with_jokers(
+        "AD",
+        vec![
+            j("j_blueprint", json!({})),
+            j("j_joker", json!({"mult": 4})),
+            j("j_rough_gem", json!({"extra": 1})),
+        ],
+    );
+    money_mode(&mut v);
+    let r = last(&to_snapshot(&v));
+    close(r.best.clone().unwrap().money_expected, 2.0);
+    close(r.gain_money, 1.0);
+}
+
+#[test]
+fn money_card_order_search() {
+    let mut v = with_jokers("AS AH", vec![j("j_hanging_chad", json!({"extra": 2}))]);
+    gold(&mut v, 1);
+    money_mode(&mut v);
+    let r = last(&to_snapshot(&v));
+    let best = r.best.unwrap();
+    close(best.money_expected, 9.0);
+    assert_eq!(best.play, vec![2, 1]);
+    assert!(r.card_order_matters);
+}
+
+fn last_hand(v: &mut Value) {
+    money_mode(v);
+    v["round"]["hands_left"] = json!(1);
+}
+
+#[test]
+fn blind_warning_on_losing_last_hand() {
+    let mut v = snap_json("AS");
+    last_hand(&mut v);
+    assert!(last(&to_snapshot(&v)).blind_warning);
+}
+
+#[test]
+fn blind_warning_off_when_hands_remain() {
+    let mut v = snap_json("AS");
+    money_mode(&mut v);
+    assert!(!last(&to_snapshot(&v)).blind_warning);
+}
+
+#[test]
+fn blind_warning_off_when_it_wins() {
+    let mut v = snap_json("AS");
+    last_hand(&mut v);
+    v["round"]["chips"] = json!(290);
+    assert!(!last(&to_snapshot(&v)).blind_warning);
+}
+
+#[test]
+fn blind_warning_off_in_score_mode() {
+    let mut v = snap_json("AS");
+    v["round"]["hands_left"] = json!(1);
+    assert!(!last(&to_snapshot(&v)).blind_warning);
+}
+
+#[test]
+fn sort_handles_infinite_scores() {
+    let mut v = snap_json("AS AH KD KC 2S 3H 7D 9C");
+    v["levels"]["Pair"]["chips"] = json!(1e308);
+    v["levels"]["Pair"]["mult"] = json!(1e308);
+    v["levels"]["Two Pair"]["chips"] = json!(1e308);
+    v["levels"]["Two Pair"]["mult"] = json!(1e308);
+    let r = last(&to_snapshot(&v));
+    assert!(r.done);
+    assert!(r.best.unwrap().expected.is_infinite());
+}
+
 fn wait_done(id: u64) -> String {
     let start = Instant::now();
     let mut latest = String::new();
