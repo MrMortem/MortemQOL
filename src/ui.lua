@@ -14,7 +14,7 @@ local text = { hand = "", score = "", range = "", percent = "", selection = "", 
 local function line(key, scale, colour)
   return {
     n = G.UIT.R,
-    config = { align = "cm", minh = 0.1 + scale },
+    config = { align = "cm", minh = 0.05 + scale },
     nodes = { { n = G.UIT.T, config = { ref_table = text, ref_value = key, scale = scale, colour = colour, shadow = true } } },
   }
 end
@@ -26,11 +26,12 @@ local function panel_definition(reasons, mode)
   end
   local rows = {}
   local function add(row) rows[#rows + 1] = row end
-  if mode == "money" then add(line("money", 0.5, G.C.MONEY)) end
-  add(line("hand", 0.4, G.C.UI.TEXT_LIGHT))
-  add(line("score", mode == "money" and 0.4 or 0.55, G.C.GOLD))
+  if mode == "money" then add(line("money", 0.45, G.C.MONEY)) end
+  add(line("hand", 0.35, G.C.UI.TEXT_LIGHT))
+  add(line("score", mode == "money" and 0.35 or 0.5, G.C.GOLD))
   add(line("range", 0.3, G.C.UI.TEXT_LIGHT))
-  add(line("percent", 0.3, G.C.UI.TEXT_LIGHT))
+  -- The panel has to stay clear of the hand, and Money mode has the blind warning instead.
+  if mode ~= "money" then add(line("percent", 0.3, G.C.UI.TEXT_LIGHT)) end
   add(line("selection", 0.3, G.C.UI.TEXT_LIGHT))
   add(line("gain", 0.3, G.C.GREEN))
   if mode == "money" then add(line("warning", 0.3, G.C.RED)) end
@@ -52,7 +53,7 @@ local function panel_definition(reasons, mode)
   })
   return {
     n = G.UIT.ROOT,
-    config = { align = "cm", colour = G.C.BLACK, r = 0.1, padding = 0.12, emboss = 0.05, minw = PANEL_WIDTH },
+    config = { align = "cm", colour = G.C.BLACK, r = 0.1, padding = 0.08, emboss = 0.05, minw = PANEL_WIDTH },
     nodes = {
       { n = G.UIT.C, config = { align = "cm", minw = PANEL_WIDTH }, nodes = rows },
     },

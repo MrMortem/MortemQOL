@@ -41,6 +41,13 @@ local SCENARIOS = {
   { name = "dna_erosion", jokers = { "j_dna", "j_erosion" }, cards = 1, first_hand = true },
   { name = "loyalty_blueprint_fires", jokers = { "j_blueprint", "j_loyalty_card" }, cards = 1, loyalty = "fires" },
   { name = "loyalty_blueprint_quiet", jokers = { "j_blueprint", "j_loyalty_card" }, cards = 1, loyalty = "quiet" },
+  { name = "money_tooth", blind = "bl_tooth", jokers = {}, cards = 5, dollars = 20 },
+  { name = "money_ox", blind = "bl_ox", jokers = {}, cards = 1, dollars = 20, most_played = true },
+  { name = "matador_blocked", blind = "bl_psychic", jokers = { "j_matador" }, cards = 1, dollars = 10 },
+  { name = "blueprint_matador_blocked", blind = "bl_psychic", jokers = { "j_blueprint", "j_matador" }, cards = 1, dollars = 10 },
+  { name = "gold_seal_retrigger", jokers = { "j_selzer" }, cards = 1, dollars = 10, gold_seal = true },
+  { name = "todo_list", jokers = { "j_todo_list" }, cards = 1, dollars = 10, todo = true },
+  { name = "rough_gem_bull", jokers = { "j_rough_gem", "j_bull" }, cards = 5, dollars = 10 },
   { name = "ox_bull", blind = "bl_ox", jokers = { "j_bull" }, cards = 1, dollars = 20, most_played = true },
 }
 local scenario_index = 0
@@ -99,6 +106,7 @@ local function setup_scenario(sc)
   G.GAME.blind.chips = TARGET
   for _, card in ipairs(G.playing_cards) do G.GAME.blind:debuff_card(card) end
   if sc.first_hand then G.GAME.current_round.hands_played = 0 end
+  if sc.gold_seal then G.hand.cards[1]:set_seal("Gold", true, true) end
   if sc.loyalty then
     for _, j in ipairs(G.jokers.cards) do
       if j.ability.name == "Loyalty Card" then
@@ -111,6 +119,8 @@ local function setup_scenario(sc)
 end
 
 local function setup_hand()
+  local wanted = love.filesystem.getInfo("MortemQOL/money") and "money" or "score"
+  if MQOL.settings.mode() ~= wanted then MQOL.settings.set_mode(wanted) end
   if love.filesystem.getInfo("MortemQOL/scenarios") then
     scenario_index = scenario_index % #SCENARIOS + 1
     active = SCENARIOS[scenario_index]
@@ -147,6 +157,10 @@ local function choose_play()
   local n = #G.hand.cards
   if active then
     for i = 1, math.min(active.cards, n) do G.hand:add_to_highlighted(G.hand.cards[i]) end
+    if active.todo then
+      local text = G.FUNCS.get_poker_hand_info(G.hand.highlighted)
+      for _, j in ipairs(G.jokers.cards) do j.ability.to_do_poker_hand = text end
+    end
     if active.most_played then
       local text = G.FUNCS.get_poker_hand_info(G.hand.highlighted)
       G.GAME.current_round.most_played_poker_hand = text
@@ -171,7 +185,20 @@ local function idle()
   return timer > 1
 end
 
+-- File switches for checking the gear without a mouse: MortemQOL/menu opens the menu, and
+-- MortemQOL/assist_off turns assistance off.
+local menu_opened = false
+local function dev_switches()
+  if love.filesystem.getInfo("MortemQOL/menu") and not menu_opened and G.STAGE == G.STAGES.RUN then
+    menu_opened = true
+    G.FUNCS.mqol_gear()
+  end
+  local assist = not love.filesystem.getInfo("MortemQOL/assist_off")
+  if MQOL.settings.assist() ~= assist then MQOL.settings.set_assist(assist) end
+end
+
 local function step(dt)
+  dev_switches()
   timer = timer + dt
   stuck = stuck + dt
   if G.STATE == G.STATES.SELECTING_HAND and dt > worst_dt then worst_dt = dt end

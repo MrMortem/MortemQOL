@@ -18,6 +18,8 @@ MQOL.panel_text = load_module("panel_text")
 MQOL.verify = load_module("verify")
 MQOL.ui = load_module("ui")
 MQOL.ui.init(mod)
+MQOL.gear = load_module("gear")
+MQOL.gear.init(mod)
 
 local ok, err = MQOL.bridge.load(mod.path)
 if ok then
@@ -31,7 +33,10 @@ local original_update = love.update
 function love.update(dt)
   original_update(dt)
   MQOL.live.update(dt)
-  local ok, ui_err = pcall(MQOL.ui.refresh)
+  local ok, ui_err = pcall(function()
+    MQOL.ui.refresh()
+    MQOL.gear.refresh()
+  end)
   if not ok and not ui_failed then
     ui_failed = true
     sendWarnMessage("panel error: " .. tostring(ui_err), "MortemQOL")
