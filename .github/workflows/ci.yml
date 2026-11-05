@@ -1,0 +1,27 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup component add clippy rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - if: runner.os == 'macOS'
+        run: brew install luajit
+      - if: runner.os == 'macOS'
+        run: cargo build --release && luajit ../tests/lua/test_ffi.lua target/release/libmortemqol_engine.dylib
+      - if: runner.os == 'macOS'
+        working-directory: .
+        run: for t in tests/lua/test_*.lua; do [ "$t" = tests/lua/test_ffi.lua ] || luajit "$t" engine/target/release/ || exit 1; done
