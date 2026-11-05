@@ -217,6 +217,15 @@ fn resolved_jokers(s: &Snapshot, order: &[usize]) -> Vec<(usize, bool)> {
     (0..order.len()).filter_map(|pos| resolve(s, order, pos)).collect()
 }
 
+/// Money from context.debuffed_hand: only Matador pays on a blocked hand.
+pub fn debuffed_hand_money(s: &Snapshot, order: &[usize]) -> f64 {
+    resolved_jokers(s, order)
+        .iter()
+        .filter(|(t, _)| s.jokers[*t].is("j_matador"))
+        .map(|(t, _)| s.jokers[*t].extra(8.0))
+        .sum()
+}
+
 pub fn space_triggers(s: &Snapshot, order: &[usize]) -> u32 {
     resolved_jokers(s, order).iter().filter(|(t, _)| s.jokers[*t].is("j_space")).count() as u32
 }

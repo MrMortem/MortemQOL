@@ -443,6 +443,10 @@ pub fn score_play(s: &Snapshot, play: &[usize], order: &[usize]) -> Scored {
     };
     if blinds::debuffs_hand(s, det.name, play.len()) {
         out.legal = false;
+        let money = jokers::debuffed_hand_money(s, order);
+        out.money_floor = money;
+        out.money_expected = money;
+        out.money_ceiling = money;
         return out;
     }
     let (triggers, p) = space_chance(s, order);
@@ -498,7 +502,7 @@ pub fn score_expected(s: &Snapshot, play: &[usize], order: &[usize]) -> Expected
     let refs: Vec<&Card> = play.iter().map(|&i| &s.hand[i]).collect();
     let det = hand::detect(&refs, &rules);
     if blinds::debuffs_hand(s, det.name, play.len()) {
-        return Expected::default();
+        return Expected { score: 0.0, money: jokers::debuffed_hand_money(s, order) };
     }
     let (triggers, p) = space_chance(s, order);
     let at = |k| {
@@ -526,7 +530,7 @@ pub fn run_with(
     let refs: Vec<&Card> = play.iter().map(|&i| &s.hand[i]).collect();
     let det = hand::detect(&refs, &rules);
     if blinds::debuffs_hand(s, det.name, play.len()) {
-        return Expected::default();
+        return Expected { score: 0.0, money: jokers::debuffed_hand_money(s, order) };
     }
     let (triggers, p) = space_chance(s, order);
     let fired = (0..triggers).filter(|_| chance.weight(p) >= 1.0).count() as u32;
