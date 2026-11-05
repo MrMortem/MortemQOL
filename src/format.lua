@@ -37,6 +37,11 @@ function M.percent(x)
   return string.format("%d%%", math.floor(x))
 end
 
+-- True for a number above zero, or the string form of an overflowed value.
+function M.positive(x)
+  return x == "naneinf" or (type(x) == "number" and x > 0)
+end
+
 local REASONS = {
   hidden_card = "A face-down card is in hand, so its effect is unknown.",
   hidden_joker = "A face-down joker's effect is unknown.",

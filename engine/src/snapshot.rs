@@ -1,5 +1,5 @@
 //! The visible game state sent by the Lua layer. See the plan's Shared Contracts.
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -9,13 +9,35 @@ fn one() -> f64 {
     1.0
 }
 
+/// A number from the game. "naneinf" means an overflowed value; anything else that isn't a number
+/// comes from another mod and is read as `default`.
+fn number_or(v: Value, default: f64) -> f64 {
+    match v {
+        Value::Number(n) => n.as_f64().unwrap_or(default),
+        Value::String(text) if text == "naneinf" => f64::INFINITY,
+        _ => default,
+    }
+}
+
+fn lenient_zero<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    Ok(number_or(Value::deserialize(d)?, 0.0))
+}
+
+fn lenient_one<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    Ok(number_or(Value::deserialize(d)?, 1.0))
+}
+
+fn lenient_int<'de, D: Deserializer<'de>>(d: D) -> Result<i32, D::Error> {
+    Ok(number_or(Value::deserialize(d)?, 0.0) as i32)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Perma {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub bonus: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub mult: f64,
-    #[serde(default = "one")]
+    #[serde(default = "one", deserialize_with = "lenient_one")]
     pub x_mult: f64,
 }
 
@@ -29,7 +51,7 @@ impl Default for Perma {
 pub struct Card {
     pub id: i64,
     /// 2 to 14. Zero when hidden.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_int")]
     pub rank: i32,
     #[serde(default)]
     pub suit: String,
@@ -72,10 +94,10 @@ pub struct Joker {
     pub debuff: bool,
     #[serde(default)]
     pub hidden: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub sell: f64,
     /// 1 common, 2 uncommon, 3 rare, 4 legendary.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_int")]
     pub rarity: i32,
     #[serde(default)]
     pub ab: Value,
@@ -105,17 +127,19 @@ impl Joker {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Level {
-    #[serde(default = "one")]
+    #[serde(default = "one", deserialize_with = "lenient_one")]
     pub level: f64,
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub chips: f64,
+    #[serde(default = "one", deserialize_with = "lenient_one")]
     pub mult: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub l_chips: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub l_mult: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub played: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub played_round: f64,
     #[serde(default)]
     pub visible: bool,
@@ -127,13 +151,13 @@ pub struct Blind {
     pub key: String,
     #[serde(default)]
     pub disabled: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub target: f64,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Idol {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_int")]
     pub rank: i32,
     #[serde(default)]
     pub suit: String,
@@ -141,13 +165,13 @@ pub struct Idol {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Round {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub hands_left: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub discards_left: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub dollars: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub chips: f64,
     /// The Idol's current target.
     #[serde(default)]
@@ -156,13 +180,13 @@ pub struct Round {
     #[serde(default)]
     pub ancient_suit: String,
     /// Hands played this run, before the play being scored.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub hands_played: f64,
     /// Hands played this round, before the play being scored.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub round_hands: f64,
     /// Tarot cards used this run.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub tarot_used: f64,
     /// The hand The Ox punishes.
     #[serde(default)]
@@ -173,12 +197,12 @@ pub struct Round {
 pub struct Deck {
     #[serde(default)]
     pub back: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub remaining: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub total: f64,
     /// Deck size at the start of the run.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_zero")]
     pub starting: f64,
 }
 

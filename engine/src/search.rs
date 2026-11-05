@@ -241,13 +241,13 @@ struct Progress<'a> {
 impl Progress<'_> {
     fn result(&self, stage: u32, done: bool, best: Option<&Candidate>) -> SearchResult {
         let s = self.s;
-        let identity: Vec<i64> = s.jokers.iter().map(|j| j.id).collect();
+        let joker_ids: Vec<i64> = s.jokers.iter().map(|j| j.id).collect();
         let Some(c) = best else {
             return SearchResult {
                 stage,
                 done,
                 best: None,
-                joker_order: identity,
+                joker_order: joker_ids,
                 current_order_expected: 0.0,
                 gain: 0.0,
                 order_exact: self.order_exact,
@@ -256,7 +256,13 @@ impl Progress<'_> {
             };
         };
         let scored = score_play(s, &c.play, &c.order);
-        let gain = (scored.expected - self.current_order_expected).max(0.0);
+        // What the joker order alone buys, for the same cards in the same order.
+        let identity: Vec<usize> = (0..s.jokers.len()).collect();
+        let gain = if c.order == identity {
+            0.0
+        } else {
+            (scored.expected - score_expected(s, &c.play, &identity)).max(0.0)
+        };
         let blind_pct =
             if s.blind.target > 0.0 { scored.expected / s.blind.target * 100.0 } else { 0.0 };
         SearchResult {

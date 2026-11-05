@@ -22,6 +22,11 @@ local function sanitize(value, seen, depth)
   return out
 end
 
+-- Other mods can put anything in these fields.
+local function number_or(value, default)
+  return type(value) == "number" and value or default
+end
+
 local function edition_key(card)
   return card.edition and card.edition.key or nil
 end
@@ -32,7 +37,7 @@ local function hand_card(card)
   end
   local center = card.config and card.config.center
   local ability = card.ability or {}
-  local perma_x = ability.perma_x_mult
+  local perma_x = number_or(ability.perma_x_mult, 0)
   return {
     id = card.sort_id,
     rank = card.base and card.base.id or 0,
@@ -41,9 +46,9 @@ local function hand_card(card)
     ed = edition_key(card),
     seal = card.seal,
     perma = {
-      bonus = ability.perma_bonus or 0,
-      mult = ability.perma_mult or 0,
-      x_mult = (perma_x and perma_x > 0) and perma_x or 1,
+      bonus = number_or(ability.perma_bonus, 0),
+      mult = number_or(ability.perma_mult, 0),
+      x_mult = perma_x > 0 and perma_x or 1,
     },
     debuff = card.debuff and true or false,
     forced = ability.forced_selection and true or false,

@@ -30,6 +30,15 @@ pub fn ox_takes_money(s: &Snapshot, hand: &str) -> bool {
     active(s, "bl_ox") && s.round.most_played == hand
 }
 
+/// The Tooth takes $1 for each played card when the hand is played.
+pub fn tooth_cost(s: &Snapshot, played_count: usize) -> f64 {
+    if active(s, "bl_tooth") {
+        played_count as f64
+    } else {
+        0.0
+    }
+}
+
 pub fn flint_active(s: &Snapshot) -> bool {
     active(s, "bl_flint")
 }

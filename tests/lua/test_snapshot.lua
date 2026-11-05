@@ -119,6 +119,16 @@ function tests.unknown_mod_fields_pass_through_as_strings()
   assert(s.hand[1].enh == "m_modded")
 end
 
+function tests.non_numeric_perma_values_do_not_raise()
+  G = fake.new()
+  local a = G.hand.cards[1].ability
+  a.perma_x_mult = "weird"
+  a.perma_bonus = {}
+  a.perma_mult = true
+  local h = MQOL.snapshot.build().hand[1]
+  assert(h.perma.x_mult == 1 and h.perma.bonus == 0 and h.perma.mult == 0)
+end
+
 function tests.missing_optional_tables_do_not_raise()
   G = fake.new()
   G.GAME.current_round.idol_card = nil

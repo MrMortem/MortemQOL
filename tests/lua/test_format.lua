@@ -33,4 +33,9 @@ for _, tag in ipairs({ "hidden_card", "hidden_joker", "lobby", "hook", "unknown_
 end
 assert(format.reason("unknown_joker:j_x"):find("j_x", 1, true), "should name the joker")
 assert(#format.reason("other_thing") > 0)
+-- positive copes with the string form of huge numbers
+assert(format.positive(5) == true)
+assert(format.positive(0) == false)
+assert(format.positive(nil) == false)
+assert(format.positive("naneinf") == true)
 print("test_format: ok")

@@ -73,6 +73,41 @@ fn finds_card_order() {
 }
 
 #[test]
+fn card_order_gain_is_not_reported_as_joker_gain() {
+    let mut v = with_jokers(
+        "AS AH",
+        vec![
+            j("j_joker", json!({"mult": 4})),
+            j("j_stuntman", json!({"extra": {"chip_mod": 250}})),
+        ],
+    );
+    v["hand"][0]["enh"] = json!("m_glass");
+    v["hand"][1]["enh"] = json!("m_mult");
+    let r = last(&to_snapshot(&v));
+    assert!(r.card_order_matters);
+    close(r.gain, 0.0);
+    assert_eq!(r.joker_order, vec![100, 101]);
+}
+
+#[test]
+fn joker_gain_excludes_card_order_when_both_help() {
+    let mut v = with_jokers(
+        "AS AH",
+        vec![j("j_cavendish", json!({"extra": {"Xmult": 3}})), j("j_joker", json!({"mult": 4}))],
+    );
+    v["hand"][0]["enh"] = json!("m_glass");
+    v["hand"][1]["enh"] = json!("m_mult");
+    let r = last(&to_snapshot(&v));
+    let best = r.best.clone().unwrap();
+    assert!(r.card_order_matters);
+    // Pair chips 32, recommended cards mult then glass: (2 + 4) X2 = 12.
+    // Joker then Cavendish: (12 + 4) X3 = 48. Cavendish then Joker: 12 X3 + 4 = 40.
+    assert_eq!(best.play, vec![2, 1]);
+    close(best.expected, 32.0 * 48.0);
+    close(r.gain, 32.0 * 8.0);
+}
+
+#[test]
 fn card_order_flag_off_when_order_is_irrelevant() {
     assert!(!last(&to_snapshot(&snap_json("KS KH"))).card_order_matters);
 }

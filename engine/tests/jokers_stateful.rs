@@ -279,13 +279,63 @@ fn copied_retrigger_counts() {
 }
 
 #[test]
-fn copied_loyalty_reads_stale_counter_when_left_of_source() {
+fn copied_loyalty_sees_the_fresh_counter() {
     let l = j(
         "j_loyalty_card",
         json!({"extra": {"Xmult": 4, "every": 5}, "hands_played_at_create": 0, "loyalty_remaining": 0}),
     );
-    let got = edit("AS", 0, vec![j("j_blueprint", json!({})), l], |v| {
-        v["round"]["hands_played"] = json!(5)
+    let bp = j("j_blueprint", json!({}));
+    let fires =
+        edit("AS", 0, vec![bp.clone(), l.clone()], |v| v["round"]["hands_played"] = json!(5));
+    close(fires, 256.0);
+    let quiet = edit("AS", 0, vec![bp, l], |v| {
+        v["round"]["hands_played"] = json!(6);
+        v["jokers"][1]["ab"]["loyalty_remaining"] = json!(5);
     });
-    close(got, 64.0);
+    close(quiet, 16.0);
+}
+
+#[test]
+fn tooth_takes_a_dollar_per_card_before_bull() {
+    let got = edit("2S 3H 7D 9C JS", 0, vec![j("j_bull", json!({"extra": 2}))], |v| {
+        v["blind"]["key"] = json!("bl_tooth");
+        v["round"]["dollars"] = json!(10);
+    });
+    // High Card J: 5 + 10 chips, plus Bull at 2 x $5.
+    close(got, 25.0);
+}
+
+#[test]
+fn disabled_tooth_takes_nothing() {
+    let got = edit("AS", 0, vec![j("j_bull", json!({"extra": 2}))], |v| {
+        v["blind"]["key"] = json!("bl_tooth");
+        v["blind"]["disabled"] = json!(true);
+    });
+    close(got, 24.0);
+}
+
+#[test]
+fn dna_copy_scales_hologram_this_hand() {
+    let jokers = vec![j("j_dna", json!({})), j("j_hologram", json!({"extra": 0.25, "x_mult": 1}))];
+    ex("AS", 0, jokers, 20.0);
+}
+
+#[test]
+fn copied_dna_scales_hologram_twice() {
+    let jokers = vec![
+        j("j_blueprint", json!({})),
+        j("j_dna", json!({})),
+        j("j_hologram", json!({"extra": 0.25, "x_mult": 1})),
+    ];
+    ex("AS", 0, jokers, 24.0);
+}
+
+#[test]
+fn dna_copy_counts_toward_erosion() {
+    let jokers = vec![j("j_dna", json!({})), j("j_erosion", json!({"extra": 4}))];
+    let got = edit("AS", 0, jokers, |v| {
+        v["deck"]["starting"] = json!(52);
+        v["deck"]["total"] = json!(50);
+    });
+    close(got, 80.0);
 }

@@ -24,8 +24,6 @@ pub struct JState {
     pub mult: f64,
     pub x_mult: f64,
     pub chips: f64,
-    /// Set once Loyalty Card has updated its counter this hand.
-    pub loyalty: Option<f64>,
 }
 
 pub struct ScoreCtx<'a> {
@@ -47,6 +45,8 @@ pub struct ScoreCtx<'a> {
     pub oops: f64,
     pub jstate: Vec<JState>,
     pub perma_add: Vec<f64>,
+    /// Playing cards added during this hand, such as DNA's copy.
+    pub cards_added: f64,
 }
 
 impl ScoreCtx<'_> {
@@ -309,6 +309,7 @@ fn run(
         dollars = 0.0;
         blind_triggered = true;
     }
+    dollars -= blinds::tooth_cost(s, play.len());
     let oops = s.jokers.iter().filter(|j| j.is("j_oops") && !j.debuff).count();
     let mut ctx = ScoreCtx {
         s,
@@ -329,6 +330,7 @@ fn run(
         chance_used: false,
         oops: 2f64.powi(oops as i32),
         jstate: jokers::initial_state(s),
+        cards_added: 0.0,
     };
 
     jokers::before(&mut ctx);

@@ -8,7 +8,7 @@
   "description": "Live calculator that finds your highest-scoring play and best joker order.",
   "prefix": "MortemQOL",
   "main_file": "MortemQOL.lua",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "dependencies": [
     "Steamodded (>=1.0.0~BETA-1814a)"
   ]

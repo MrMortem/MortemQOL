@@ -55,6 +55,12 @@ fn main() {
     let v = json!({"schema": 1, "hand": hand, "jokers": jokers, "levels": levels,
         "blind": {"key": "bl_small", "target": 300}, "deck": {"back": "b_red"},
         "round": {"hands_left": 4, "discards_left": 3, "dollars": 4}});
+    let mut copier = v.clone();
+    copier["jokers"][4] = json!({"id": 104, "key": "j_blueprint", "ab": {}});
+    let with_copier = snapshot::parse(copier.to_string().as_bytes()).unwrap();
+    let begun = Instant::now();
+    search::run(&with_copier, &|| false, &mut |_| {});
+    println!("with Blueprint, no order pruning: {:?}", begun.elapsed());
     let s = snapshot::parse(v.to_string().as_bytes()).unwrap();
     for _ in 0..3 {
         let begun = Instant::now();

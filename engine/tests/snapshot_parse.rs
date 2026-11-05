@@ -57,3 +57,36 @@ fn schema_from_the_future_returns_err() {
     v["schema"] = json!(2);
     assert!(parse(v.to_string().as_bytes()).is_err());
 }
+
+#[test]
+fn string_rarity_from_another_mod_does_not_fail_parse() {
+    let mut v = snap_json("AS");
+    v["jokers"] = json!([{"id": 9, "key": "j_modded", "rarity": "cry_epic"}]);
+    assert_eq!(parse(v.to_string().as_bytes()).unwrap().jokers[0].rarity, 0);
+}
+
+#[test]
+fn non_numeric_fields_from_other_mods_default() {
+    let mut v = snap_json("AS");
+    v["jokers"] = json!([{"id": 9, "key": "j_joker", "sell": {"weird": true}}]);
+    v["hand"][0]["perma"] = json!({"bonus": "x", "mult": [], "x_mult": false});
+    v["levels"]["Odd"] = json!({"level": "?", "chips": {"big": 1}, "mult": "?", "played": "?"});
+    let s = parse(v.to_string().as_bytes()).unwrap();
+    assert_eq!(s.jokers[0].sell, 0.0);
+    assert_eq!(s.hand[0].perma.bonus, 0.0);
+    assert_eq!(s.hand[0].perma.x_mult, 1.0);
+    assert_eq!(s.levels["Odd"].chips, 0.0);
+    assert_eq!(s.levels["Odd"].level, 1.0);
+}
+
+#[test]
+fn naneinf_numbers_parse_as_infinity() {
+    let mut v = snap_json("AS");
+    v["blind"]["target"] = json!("naneinf");
+    v["round"]["dollars"] = json!("naneinf");
+    v["levels"]["High Card"]["chips"] = json!("naneinf");
+    let s = parse(v.to_string().as_bytes()).unwrap();
+    assert!(s.blind.target.is_infinite());
+    assert!(s.round.dollars.is_infinite());
+    assert!(s.levels["High Card"].chips.is_infinite());
+}

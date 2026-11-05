@@ -180,7 +180,6 @@ pub fn initial_state(s: &Snapshot) -> Vec<JState> {
             mult: j.num("mult", 0.0),
             x_mult: j.num("x_mult", 1.0),
             chips: j.extra_num("chips", 0.0),
-            loyalty: None,
         })
         .collect()
 }
@@ -263,6 +262,13 @@ pub fn before(ctx: &mut ScoreCtx) {
             "j_dna" if s.round.round_hands == 0.0 && ctx.played.len() == 1 => {
                 let copy = ctx.played[0].clone();
                 ctx.held.push(copy);
+                ctx.cards_added += 1.0;
+                // Adding a playing card scales Hologram immediately.
+                for (index, joker) in s.jokers.iter().enumerate() {
+                    if joker.is("j_hologram") && !joker.debuff && !joker.hidden {
+                        ctx.jstate[index].x_mult += joker.extra(0.25);
+                    }
+                }
             }
             "j_ride_the_bus" if !copied => {
                 if det.scoring.iter().any(|&i| hand::is_face(&ctx.played[i], &ctx.rules)) {
@@ -480,20 +486,13 @@ fn loyalty_value(ctx: &ScoreCtx, j: &Joker) -> f64 {
     (every - 1.0 - played).rem_euclid(every + 1.0)
 }
 
-fn joker_main(ctx: &mut ScoreCtx, t: usize, copied: bool) {
+fn joker_main(ctx: &mut ScoreCtx, t: usize) {
     let s = ctx.s;
     let j = &s.jokers[t];
     let key = j.key.as_deref().unwrap_or("");
     if key == "j_loyalty_card" {
-        let every = j.extra_num("every", 5.0);
-        let remaining = if copied {
-            ctx.jstate[t].loyalty.unwrap_or_else(|| j.num("loyalty_remaining", -1.0))
-        } else {
-            let value = loyalty_value(ctx, j);
-            ctx.jstate[t].loyalty = Some(value);
-            value
-        };
-        if remaining == every {
+        // The counter is recomputed before the copy check, so copies see the fresh value.
+        if loyalty_value(ctx, j) == j.extra_num("every", 5.0) {
             ctx.x_mult(j.extra_num("Xmult", 4.0));
         }
         return;
@@ -546,8 +545,8 @@ fn joker_main(ctx: &mut ScoreCtx, t: usize, copied: bool) {
         "j_seeing_double" if seeing_double(ctx) => ctx.x_mult(j.extra(2.0)),
         "j_castle" | "j_wee" | "j_square" | "j_runner" | "j_ice_cream" => ctx.chips += state.chips,
         "j_blue_joker" if s.deck.remaining > 0.0 => ctx.chips += j.extra(2.0) * s.deck.remaining,
-        "j_erosion" if s.deck.starting - s.deck.total > 0.0 => {
-            ctx.mult += j.extra(4.0) * (s.deck.starting - s.deck.total)
+        "j_erosion" if s.deck.starting - s.deck.total - ctx.cards_added > 0.0 => {
+            ctx.mult += j.extra(4.0) * (s.deck.starting - s.deck.total - ctx.cards_added)
         }
         "j_stone" => ctx.chips += j.extra(25.0) * j.num("stone_tally", 0.0),
         "j_steel_joker" if j.num("steel_tally", 0.0) > 0.0 => {
@@ -605,8 +604,8 @@ pub fn main_phase(ctx: &mut ScoreCtx) {
         if !joker.debuff {
             apply_joker_edition(ctx, joker.ed.as_deref(), true);
         }
-        if let Some((t, copied)) = resolve(s, order, pos) {
-            joker_main(ctx, t, copied);
+        if let Some((t, _)) = resolve(s, order, pos) {
+            joker_main(ctx, t);
         }
         if joker.rarity == 2 {
             for (other, _) in resolved_jokers(s, order) {

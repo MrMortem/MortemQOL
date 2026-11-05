@@ -30,7 +30,21 @@ local KEYS = {
 local ENH = { "m_bonus", "m_mult", "m_wild", "m_glass", "m_steel", "m_stone", "m_gold", "m_lucky" }
 local EDS = { { foil = true }, { holo = true }, { polychrome = true } }
 local SEALS = { "Red", "Blue", "Gold", "Purple" }
-local BLINDS = { "bl_flint", "bl_arm", "bl_psychic", "bl_eye", "bl_mouth", "bl_ox", "bl_head", "bl_club", "bl_goad", "bl_window", "bl_plant", "bl_small", "bl_small", "bl_small" }
+local BLINDS = { "bl_flint", "bl_arm", "bl_psychic", "bl_eye", "bl_mouth", "bl_ox", "bl_head", "bl_club", "bl_goad", "bl_window", "bl_plant", "bl_tooth", "bl_small", "bl_small", "bl_small" }
+-- With the file MortemQOL/scenarios present, these replace random setups, in a cycle. Each is a
+-- combination that random deals rarely reach.
+local SCENARIOS = {
+  { name = "tooth_bull", blind = "bl_tooth", jokers = { "j_bull" }, cards = 5, dollars = 20 },
+  { name = "tooth_bootstraps", blind = "bl_tooth", jokers = { "j_bootstraps" }, cards = 5, dollars = 12 },
+  { name = "dna_hologram", jokers = { "j_dna", "j_hologram" }, cards = 1, first_hand = true },
+  { name = "blueprint_dna_hologram", jokers = { "j_blueprint", "j_dna", "j_hologram" }, cards = 1, first_hand = true },
+  { name = "dna_erosion", jokers = { "j_dna", "j_erosion" }, cards = 1, first_hand = true },
+  { name = "loyalty_blueprint_fires", jokers = { "j_blueprint", "j_loyalty_card" }, cards = 1, loyalty = "fires" },
+  { name = "loyalty_blueprint_quiet", jokers = { "j_blueprint", "j_loyalty_card" }, cards = 1, loyalty = "quiet" },
+  { name = "ox_bull", blind = "bl_ox", jokers = { "j_bull" }, cards = 1, dollars = 20, most_played = true },
+}
+local scenario_index = 0
+local active = nil
 local TARGET = 1e300
 local WAIT_AFTER_SETUP = 0.6
 
@@ -74,7 +88,35 @@ end
 
 local rng_before, rng_changes, worst_dt = nil, 0, 0
 
+local function setup_scenario(sc)
+  for i = #G.jokers.cards, 1, -1 do G.jokers.cards[i]:remove() end
+  G.jokers.config.card_limit = 8
+  for _, key in ipairs(sc.jokers) do SMODS.add_card({ key = key, set = "Joker", edition = "e_base" }) end
+  G.GAME.dollars = sc.dollars or 10
+  G.GAME.current_round.hands_left = 3
+  for _, h in pairs(G.GAME.hands) do h.played_this_round = 0 end
+  G.GAME.blind:set_blind(G.P_BLINDS[sc.blind or "bl_small"], nil, true)
+  G.GAME.blind.chips = TARGET
+  for _, card in ipairs(G.playing_cards) do G.GAME.blind:debuff_card(card) end
+  if sc.first_hand then G.GAME.current_round.hands_played = 0 end
+  if sc.loyalty then
+    for _, j in ipairs(G.jokers.cards) do
+      if j.ability.name == "Loyalty Card" then
+        j.ability.hands_played_at_create = 0
+        G.GAME.hands_played = sc.loyalty == "fires" and 5 or 6
+      end
+    end
+  end
+  log("scenario " .. sc.name)
+end
+
 local function setup_hand()
+  if love.filesystem.getInfo("MortemQOL/scenarios") then
+    scenario_index = scenario_index % #SCENARIOS + 1
+    active = SCENARIOS[scenario_index]
+    return setup_scenario(active)
+  end
+  active = nil
   for i = #G.jokers.cards, 1, -1 do G.jokers.cards[i]:remove() end
   G.jokers.config.card_limit = 8
   for _ = 1, rng:random(0, 6) do
@@ -103,6 +145,14 @@ end
 local function choose_play()
   G.hand:unhighlight_all()
   local n = #G.hand.cards
+  if active then
+    for i = 1, math.min(active.cards, n) do G.hand:add_to_highlighted(G.hand.cards[i]) end
+    if active.most_played then
+      local text = G.FUNCS.get_poker_hand_info(G.hand.highlighted)
+      G.GAME.current_round.most_played_poker_hand = text
+    end
+    return
+  end
   local state = MQOL.live.state()
   if rng:random() < 0.3 and state.result and MQOL.live.select_best() then return end
   local want = rng:random(1, math.min(5, n))
@@ -180,6 +230,10 @@ local function step(dt)
   G.FUNCS.play_cards_from_highlighted()
   hands = hands + 1
   phase, timer, stuck = "played", 0, 0
+  if active then
+    local c = MQOL.verify.counts()
+    log(string.format("after %s match=%d mismatch=%d", active.name, c.match, c.mismatch))
+  end
   if hands % 10 == 0 then
     local c = MQOL.verify.counts()
     local distinct = 0

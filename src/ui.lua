@@ -116,7 +116,7 @@ local function by_id(cards, id)
 end
 
 local function refresh_badges(result)
-  local jokers = result and result.gain and result.gain > 0 and result.joker_order or nil
+  local jokers = result and MQOL.format.positive(result.gain) and result.joker_order or nil
   local cards = result and result.card_order_matters and result.best and result.best.play or nil
   local signature = table.concat(jokers or {}, ",") .. "|" .. table.concat(cards or {}, ",")
   if signature == badge_signature then return end
@@ -153,7 +153,7 @@ local function set_text(state)
   if state.selection then
     text.selection = "Selected: " .. format.score(state.selection.expected)
   end
-  if result and result.gain and result.gain > 0 then
+  if result and format.positive(result.gain) then
     local label = result.order_exact and "Reorder jokers: +" or "Reorder jokers (best found): +"
     text.gain = label .. format.score(result.gain)
   end
