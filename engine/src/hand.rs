@@ -50,7 +50,12 @@ pub fn is_face(card: &Card, rules: &Rules) -> bool {
 
 /// Card:is_suit outside of flush checks: debuffed cards match nothing.
 pub fn is_suit(card: &Card, suit: &str, rules: &Rules) -> bool {
-    if card.debuff || card.is_stone() {
+    is_suit_bypass(card, suit, false, rules)
+}
+
+/// Card:is_suit with its bypass_debuff argument.
+pub fn is_suit_bypass(card: &Card, suit: &str, bypass_debuff: bool, rules: &Rules) -> bool {
+    if (card.debuff && !bypass_debuff) || card.is_stone() {
         return false;
     }
     if card.has_enh("m_wild") {
@@ -62,7 +67,7 @@ pub fn is_suit(card: &Card, suit: &str, rules: &Rules) -> bool {
     card.suit == suit
 }
 
-fn flush_matches(card: &Card, suit: &str, rules: &Rules) -> bool {
+pub fn flush_matches(card: &Card, suit: &str, rules: &Rules) -> bool {
     if card.is_stone() {
         return false;
     }

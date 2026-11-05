@@ -87,3 +87,32 @@ pub fn score(s: &Snapshot, play: &[usize]) -> mortemqol_engine::score::Scored {
     let order: Vec<usize> = (0..s.jokers.len()).collect();
     mortemqol_engine::score::score_play(s, play, &order)
 }
+
+pub fn j(key: &str, ab: Value) -> Value {
+    json!({"id": 100, "key": key, "ab": ab, "sell": 2, "rarity": 1})
+}
+
+/// Scores every card in `hand` except the last `held`, with these jokers.
+pub fn play(hand: &str, held: usize, jokers: Vec<Value>) -> mortemqol_engine::score::Scored {
+    let mut v = snap_json(hand);
+    v["jokers"] = Value::Array(number_jokers(jokers));
+    let s = to_snapshot(&v);
+    let idx: Vec<usize> = (0..s.hand.len() - held).collect();
+    score(&s, &idx)
+}
+
+/// Gives each joker a distinct id.
+pub fn number_jokers(jokers: Vec<Value>) -> Vec<Value> {
+    jokers
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut v)| {
+            v["id"] = json!(100 + i);
+            v
+        })
+        .collect()
+}
+
+pub fn close(a: f64, b: f64) {
+    assert!((a - b).abs() < 1e-6, "{a} != {b}");
+}
