@@ -25,6 +25,115 @@ end
 
 local tests = {}
 
+local function money_pred(extra)
+  local p = pred({ money_floor = 3, money_expected = 3, money_ceiling = 3 })
+  for k, v in pairs(extra or {}) do p[k] = v end
+  return p
+end
+
+local MONEY_JSON = '{"floor":64,"expected":64,"ceiling":64,"legal":true,"has_chance":false,"approximate":[],"money_floor":3,"money_expected":3,"money_ceiling":3}'
+
+local function play_and_score(json)
+  local written = setup(json or MONEY_JSON)
+  G.GAME.dollars = 10
+  G.hand.highlighted = { G.hand.cards[1] }
+  MQOL.verify.before_play()
+  G.STATE = G.STATES.HAND_PLAYED
+  MQOL.verify.after_score(64)
+  return written
+end
+
+function tests.money_exact_match()
+  setup()
+  assert(MQOL.verify.compare_money(money_pred(), 3) == "match")
+  assert(MQOL.verify.compare_money(money_pred(), 3 + 1e-12) == "match")
+end
+
+function tests.money_exact_mismatch()
+  setup()
+  assert(MQOL.verify.compare_money(money_pred(), 4) == "mismatch")
+end
+
+function tests.money_range_match()
+  setup()
+  local p = money_pred({ money_floor = 0, money_expected = 1.3, money_ceiling = 20 })
+  assert(MQOL.verify.compare_money(p, 0) == "match")
+  assert(MQOL.verify.compare_money(p, 20) == "match")
+end
+
+function tests.money_outside_range_mismatches()
+  setup()
+  local p = money_pred({ money_floor = 0, money_expected = 1.3, money_ceiling = 20 })
+  assert(MQOL.verify.compare_money(p, 21) == "mismatch")
+  assert(MQOL.verify.compare_money(p, -1) == "mismatch")
+end
+
+function tests.money_approximate_never_mismatches()
+  setup()
+  assert(MQOL.verify.compare_money(money_pred({ approximate = { "lobby" } }), 99) == "approximate")
+end
+
+function tests.tick_waits_for_hand_played_to_end()
+  play_and_score()
+  local before = MQOL.verify.counts().match
+  G.GAME.dollars = 13
+  MQOL.verify.tick()
+  assert(MQOL.verify.counts().match == before, "compared too early")
+  G.STATE = G.STATES.SELECTING_HAND
+  MQOL.verify.tick()
+  assert(MQOL.verify.counts().match == before + 1)
+  MQOL.verify.tick()
+  assert(MQOL.verify.counts().match == before + 1, "compared twice")
+end
+
+function tests.money_mismatch_writes_line_with_actual_money()
+  local written = play_and_score()
+  G.GAME.dollars = 99
+  G.STATE = G.STATES.SELECTING_HAND
+  MQOL.verify.tick()
+  assert(#written == 1 and written[1].file == "verify.jsonl")
+  local line = MQOL.json.decode(written[1].text)
+  assert(line.actual_money == 89 and line.prediction.money_expected == 3 and line.actual == nil)
+  assert(MQOL.verify.counts().mismatch == 1)
+end
+
+function tests.new_play_discards_uncompared_money()
+  play_and_score()
+  local before = MQOL.verify.counts().match
+  MQOL.verify.before_play()
+  G.STATE = G.STATES.SELECTING_HAND
+  G.GAME.dollars = 500
+  MQOL.verify.tick()
+  assert(MQOL.verify.counts().mismatch == 0, "compared a stale balance")
+  assert(MQOL.verify.counts().match == before)
+end
+
+function tests.assist_off_records_nothing()
+  setup(MONEY_JSON)
+  MQOL.settings.init({ assist = false })
+  G.hand.highlighted = { G.hand.cards[1] }
+  MQOL.verify.before_play()
+  MQOL.verify.after_score(1)
+  assert(MQOL.verify.counts().mismatch == 0 and MQOL.verify.counts().match == 0)
+end
+
+function tests.tick_finishes_a_play_when_assist_goes_off()
+  play_and_score()
+  local before = MQOL.verify.counts().match
+  MQOL.settings.init({ assist = false })
+  G.GAME.dollars = 13
+  G.STATE = G.STATES.SELECTING_HAND
+  MQOL.verify.tick()
+  assert(MQOL.verify.counts().match == before + 1)
+end
+
+function tests.tick_error_does_not_raise()
+  play_and_score()
+  G.GAME = nil
+  G.STATE = G.STATES.SELECTING_HAND
+  MQOL.verify.tick()
+end
+
 function tests.exact_match_within_1e_9()
   setup()
   assert(MQOL.verify.compare(pred(), 64) == "match")

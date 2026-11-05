@@ -116,6 +116,7 @@ local function step(dt)
 end
 
 function M.update(dt)
+  if MQOL.verify then MQOL.verify.tick() end
   local ok, err = pcall(step, dt)
   if not ok then
     log_once(err)

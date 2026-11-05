@@ -6,6 +6,8 @@ local DIR = "MortemQOL"
 
 local counts = { match = 0, mismatch = 0, approximate = 0 }
 local pending = nil
+-- A scored play waiting for its money to settle, which happens after the game's delayed events.
+local money_pending = nil
 
 function M._write(file, text)
   love.filesystem.createDirectory(DIR)
@@ -38,6 +40,18 @@ function M.compare(prediction, actual)
   return compare_values(prediction, actual)
 end
 
+local function compare_money_values(prediction, actual)
+  local floor, ceiling = prediction.money_floor, prediction.money_ceiling
+  if type(floor) ~= "number" or type(ceiling) ~= "number" then return "match" end
+  local slack = TOLERANCE * math.max(math.abs(floor), math.abs(ceiling), 1)
+  return (actual >= floor - slack and actual <= ceiling + slack) and "match" or "mismatch"
+end
+
+function M.compare_money(prediction, actual)
+  if prediction.approximate and #prediction.approximate > 0 then return "approximate" end
+  return compare_money_values(prediction, actual)
+end
+
 function M.counts()
   return counts
 end
@@ -45,14 +59,20 @@ end
 -- Call just before the game plays the highlighted cards.
 function M.before_play()
   pending = nil
+  money_pending = nil
   pcall(function()
-    if not MQOL.bridge.available() then return end
+    if not MQOL.settings.assist() or not MQOL.bridge.available() then return end
     local snapshot = MQOL.snapshot.build()
     local play = MQOL.snapshot.selected_ids()
     if #play == 0 then return end
     local status, json = MQOL.bridge.score(MQOL.json.encode({ snapshot = snapshot, play = play }))
     if status == 1 and json then
-      pending = { snapshot = snapshot, play = play, prediction = MQOL.json.decode(json) }
+      pending = {
+        snapshot = snapshot,
+        play = play,
+        prediction = MQOL.json.decode(json),
+        balance = G.GAME.dollars,
+      }
     end
   end)
 end
@@ -62,15 +82,36 @@ function M.after_score(actual)
   local entry = pending
   pending = nil
   if not entry then return end
+  money_pending = entry
   pcall(function()
     local outcome = M.compare(entry.prediction, actual)
     counts[outcome] = counts[outcome] + 1
     local wrong = outcome == "mismatch"
       or (outcome == "approximate" and compare_values(entry.prediction, actual) == "mismatch")
     if wrong then
-      entry.actual = actual
+      local line = { snapshot = entry.snapshot, play = entry.play, prediction = entry.prediction, actual = actual }
       local file = outcome == "mismatch" and "verify.jsonl" or "verify_approximate.jsonl"
-      M._write(file, MQOL.json.encode(entry) .. "\n")
+      M._write(file, MQOL.json.encode(line) .. "\n")
+    end
+  end)
+end
+
+-- Call every frame. Compares money once the game has left its hand-played state, which is after
+-- the hand's money events and before end-of-round payouts.
+function M.tick()
+  local entry = money_pending
+  if not entry or G.STATE == G.STATES.HAND_PLAYED then return end
+  money_pending = nil
+  pcall(function()
+    local actual = G.GAME.dollars - entry.balance
+    local outcome = M.compare_money(entry.prediction, actual)
+    counts[outcome] = counts[outcome] + 1
+    local wrong = outcome == "mismatch"
+      or (outcome == "approximate" and compare_money_values(entry.prediction, actual) == "mismatch")
+    if wrong then
+      local line = { snapshot = entry.snapshot, play = entry.play, prediction = entry.prediction, actual_money = actual }
+      local file = outcome == "mismatch" and "verify.jsonl" or "verify_approximate.jsonl"
+      M._write(file, MQOL.json.encode(line) .. "\n")
     end
   end)
 end
