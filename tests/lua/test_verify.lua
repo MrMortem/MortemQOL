@@ -4,6 +4,7 @@ local fake = dofile("tests/lua/fake_game.lua")
 local function setup(score_json, status)
   G = fake.new()
   MQOL = {}
+  MQOL.settings = dofile("src/settings.lua")
   MQOL.json = dofile("src/json.lua")
   MQOL.snapshot = dofile("src/snapshot.lua")
   MQOL.bridge = {

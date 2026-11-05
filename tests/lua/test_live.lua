@@ -5,6 +5,9 @@ local fake = require("fake_game")
 local function setup(overrides)
   G = fake.new()
   MQOL = { warnings = {} }
+  MQOL.settings = dofile("src/settings.lua")
+  MQOL.settings._save = function() end
+  MQOL.settings.init({})
   MQOL.json = dofile("src/json.lua")
   MQOL.snapshot = dofile("src/snapshot.lua")
   local calls = { starts = 0, scores = 0, polls = {} }
@@ -180,6 +183,61 @@ function tests.leaving_hand_selection_clears_result()
   G.STATE = G.STATES.HAND_PLAYED
   MQOL.live.update(1)
   assert(MQOL.live.state().result == nil)
+end
+
+function tests.assist_off_clears_and_stops()
+  local calls = setup({ search_poll = function() return 1, RESULT end })
+  MQOL.live.update(1)
+  assert(MQOL.live.state().result)
+  G.hand.highlighted = { G.hand.cards[1] }
+  MQOL.settings.set_assist(false)
+  local starts, scores = calls.starts, calls.scores
+  MQOL.live.update(1)
+  MQOL.live.update(1)
+  local st = MQOL.live.state()
+  assert(st.status == "idle" and st.result == nil and st.selection == nil)
+  assert(calls.starts == starts and calls.scores == scores)
+end
+
+function tests.assist_off_does_not_build()
+  setup()
+  MQOL.settings.set_assist(false)
+  MQOL.snapshot.build = function() error("should not build") end
+  MQOL.live.update(1)
+  assert(MQOL.live.state().status == "idle")
+end
+
+function tests.assist_on_restarts_search()
+  local calls = setup()
+  MQOL.settings.set_assist(false)
+  MQOL.live.update(1)
+  MQOL.settings.set_assist(true)
+  MQOL.live.update(0.01)
+  assert(calls.starts == 1 and MQOL.live.state().status == "calculating")
+end
+
+function tests.mode_change_starts_new_search_and_clears_result()
+  local polled = {}
+  local calls = setup({ search_poll = function(id)
+    polled[#polled + 1] = id
+    if id == 1 then return 1, RESULT end
+    return 0, nil
+  end })
+  MQOL.live.update(1)
+  assert(MQOL.live.state().result)
+  MQOL.settings.set_mode("money")
+  MQOL.live.update(0.01)
+  assert(calls.starts == 2, "mode change should search at once")
+  assert(MQOL.live.state().result == nil, "old mode's result shown")
+  assert(polled[#polled] == 2)
+end
+
+function tests.search_json_contains_mode()
+  local sent
+  setup({ search_start = function(json) sent = json; return 1 end })
+  MQOL.settings.set_mode("money")
+  MQOL.live.update(1)
+  assert(sent:find('"objective":"money"', 1, true))
 end
 
 local failed = 0

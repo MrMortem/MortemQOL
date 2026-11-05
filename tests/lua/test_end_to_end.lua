@@ -5,6 +5,7 @@ local ffi = require("ffi")
 local fake = require("fake_game")
 G = fake.new()
 MQOL = {}
+MQOL.settings = dofile("src/settings.lua")
 MQOL.json = dofile("src/json.lua")
 MQOL.snapshot = dofile("src/snapshot.lua")
 MQOL.bridge = dofile("src/bridge.lua")

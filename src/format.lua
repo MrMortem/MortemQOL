@@ -37,6 +37,15 @@ function M.percent(x)
   return string.format("%d%%", math.floor(x))
 end
 
+-- A change in money: "+$3", "+$4.50", "-$5", "$0".
+function M.money(x)
+  if type(x) ~= "number" or x ~= x or x == math.huge or x == -math.huge then return "naneinf" end
+  if x == 0 then return "$0" end
+  local size = math.abs(x)
+  local digits = size == math.floor(size) and string.format("%d", size) or string.format("%.2f", size)
+  return (x > 0 and "+$" or "-$") .. digits
+end
+
 -- True for a number above zero, or the string form of an overflowed value.
 function M.positive(x)
   return x == "naneinf" or (type(x) == "number" and x > 0)

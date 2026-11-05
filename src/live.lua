@@ -16,6 +16,7 @@ function M._reset()
     selection_key = nil,
     timer = REBUILD_INTERVAL,
     logged = false,
+    mode = nil,
   }
 end
 
@@ -85,6 +86,17 @@ local function poll()
 end
 
 local function step(dt)
+  if not MQOL.settings.assist() then
+    if state.status ~= "idle" then clear() end
+    state.timer = REBUILD_INTERVAL
+    return
+  end
+  if state.mode ~= MQOL.settings.mode() then
+    -- Drop the old mode's result now, rather than at the next rebuild.
+    state.mode = MQOL.settings.mode()
+    clear()
+    state.timer = REBUILD_INTERVAL
+  end
   if not MQOL.bridge.available() then
     state.status = "unavailable"
     return
