@@ -261,7 +261,7 @@ pub fn before(ctx: &mut ScoreCtx) {
                 ctx.dollars += j.extra_num("dollars", 4.0)
             }
             "j_dna" if s.round.round_hands == 0.0 && ctx.played.len() == 1 => {
-                let copy = ctx.played[0].clone().into_owned();
+                let copy = ctx.played[0].clone();
                 ctx.held.push(copy);
             }
             "j_ride_the_bus" if !copied => {

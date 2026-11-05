@@ -1,5 +1,6 @@
 //! C ABI used by the Lua bridge. See the plan's Shared Contracts.
 
+use crate::worker::PollStatus;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub const ABI_VERSION: u32 = 1;
@@ -44,8 +45,10 @@ pub extern "C" fn mqol_abi_version() -> u32 {
 #[no_mangle]
 pub unsafe extern "C" fn mqol_search_start(json: *const u8, len: usize) -> u64 {
     guarded(0, || {
-        let _ = (json, len);
-        0
+        if json.is_null() {
+            return 0;
+        }
+        crate::worker::start(std::slice::from_raw_parts(json, len).to_vec())
     })
 }
 
@@ -61,8 +64,24 @@ pub unsafe extern "C" fn mqol_search_poll(
     out_len: *mut usize,
 ) -> i32 {
     guarded(STATUS_ERROR, || {
-        let _ = (id, out, cap, out_len);
-        STATUS_UNKNOWN_ID
+        if !out_len.is_null() {
+            *out_len = 0;
+        }
+        let (status, data) = crate::worker::poll(id);
+        let code = match status {
+            PollStatus::Running => STATUS_RUNNING,
+            PollStatus::Finished => STATUS_FINISHED,
+            PollStatus::Error => STATUS_ERROR,
+            PollStatus::Unknown => STATUS_UNKNOWN_ID,
+        };
+        let Some(bytes) = data else {
+            return code;
+        };
+        let written = write_out(&bytes, out, cap, out_len, code);
+        if written == STATUS_TOO_SMALL {
+            crate::worker::mark_unread(id);
+        }
+        written
     })
 }
 

@@ -33,7 +33,7 @@ pub struct ScoreCtx<'a> {
     pub mode: Mode,
     pub order: &'a [usize],
     pub played: Vec<Cow<'a, Card>>,
-    pub held: Vec<Card>,
+    pub held: Vec<Cow<'a, Card>>,
     pub det: &'a Detected,
     pub rules: Rules,
     pub chips: f64,
@@ -202,7 +202,7 @@ fn apply_edition(ctx: &mut ScoreCtx, ed: Option<&str>) {
 }
 
 fn score_played_card(ctx: &mut ScoreCtx, i: usize) {
-    let card = ctx.played[i].clone().into_owned();
+    let card = ctx.played[i].clone();
     if card.debuff {
         ctx.blind_triggered = true;
         return;
@@ -288,12 +288,12 @@ fn run(
     level_ups: u32,
 ) -> (f64, bool) {
     let played: Vec<Cow<Card>> = play.iter().map(|&i| Cow::Borrowed(&s.hand[i])).collect();
-    let held: Vec<Card> = s
+    let held: Vec<Cow<Card>> = s
         .hand
         .iter()
         .enumerate()
         .filter(|(i, _)| !play.contains(i))
-        .map(|(_, c)| c.clone())
+        .map(|(_, c)| Cow::Borrowed(c))
         .collect();
     let level = s.levels.get(det.name);
     let (mut lvl_chips, mut lvl_mult) = level.map_or((0.0, 1.0), |l| (l.chips, l.mult));
@@ -411,6 +411,32 @@ pub fn score_play(s: &Snapshot, play: &[usize], order: &[usize]) -> Scored {
         })
         .sum();
     out
+}
+
+/// Just the expected score, for the search's hot loop.
+pub fn score_expected(s: &Snapshot, play: &[usize], order: &[usize]) -> f64 {
+    let rules = jokers::rules(s);
+    let refs: Vec<&Card> = play.iter().map(|&i| &s.hand[i]).collect();
+    let det = hand::detect(&refs, &rules);
+    if blinds::debuffs_hand(s, det.name, play.len()) {
+        return 0.0;
+    }
+    let triggers = jokers::space_triggers(s, order);
+    if triggers == 0 {
+        return run(s, play, order, &det, rules, Mode::Expected, 0).0;
+    }
+    let oops = s.jokers.iter().filter(|j| j.is("j_oops") && !j.debuff).count();
+    let p = (2f64.powi(oops as i32) / jokers::space_odds(s)).min(1.0);
+    if p >= 1.0 {
+        return run(s, play, order, &det, rules, Mode::Expected, triggers).0;
+    }
+    (0..=triggers)
+        .map(|k| {
+            let w =
+                binomial(triggers, k) * p.powi(k as i32) * (1.0 - p).powi((triggers - k) as i32);
+            w * run(s, play, order, &det, rules, Mode::Expected, k).0
+        })
+        .sum()
 }
 
 #[derive(Deserialize)]
