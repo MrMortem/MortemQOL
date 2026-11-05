@@ -22,3 +22,6 @@ jobs:
         run: brew install luajit
       - if: runner.os == 'macOS'
         run: cargo build --release && luajit ../tests/lua/test_ffi.lua target/release/libmortemqol_engine.dylib
+      - if: runner.os == 'macOS'
+        working-directory: .
+        run: for t in tests/lua/test_*.lua; do [ "$t" = tests/lua/test_ffi.lua ] || luajit "$t" engine/target/release/ || exit 1; done

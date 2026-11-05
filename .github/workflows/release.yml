@@ -1,0 +1,65 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - working-directory: engine
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          lipo -create -output libmortemqol_engine.dylib \
+            target/aarch64-apple-darwin/release/libmortemqol_engine.dylib \
+            target/x86_64-apple-darwin/release/libmortemqol_engine.dylib
+          codesign --force -s - libmortemqol_engine.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: engine/libmortemqol_engine.dylib
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - working-directory: engine
+        run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: engine/target/release/mortemqol_engine.dll
+  publish:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Check the tag matches the manifest
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test "$(jq -r .version_number manifest.json)" = "${version%%-*}"
+          test "$(jq -r .version MortemQOL.json)" = "$version"
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/native/macos dist/native/windows
+          cp artifacts/macos/libmortemqol_engine.dylib dist/native/macos/
+          cp artifacts/windows/mortemqol_engine.dll dist/native/windows/
+          cp -R manifest.json MortemQOL.json MortemQOL.lua README.md LICENSE icon.png src dist/
+          [ -f config.lua ] && cp config.lua dist/ || true
+          (cd dist && zip -r "../MortemQOL-$version.zip" .)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          flag=""
+          case "$GITHUB_REF_NAME" in *-*|v0.0*) flag="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" "MortemQOL-$version.zip" \
+            --target "$GITHUB_SHA" --title "MortemQOL $version" --generate-notes $flag

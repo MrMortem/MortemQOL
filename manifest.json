@@ -1,0 +1,7 @@
+{
+  "name": "MortemQOL",
+  "version_number": "0.0.1",
+  "website_url": "https://github.com/MrMortem/MortemQOL",
+  "description": "Live calculator that finds your highest-scoring Balatro play and best joker order.",
+  "dependencies": []
+}
