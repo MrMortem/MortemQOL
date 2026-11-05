@@ -81,3 +81,9 @@ pub fn to_snapshot(v: &Value) -> Snapshot {
 pub fn snap(hand: &str) -> Snapshot {
     to_snapshot(&snap_json(hand))
 }
+
+/// Scores `play` (indexes into the hand) with the snapshot's joker order.
+pub fn score(s: &Snapshot, play: &[usize]) -> mortemqol_engine::score::Scored {
+    let order: Vec<usize> = (0..s.jokers.len()).collect();
+    mortemqol_engine::score::score_play(s, play, &order)
+}

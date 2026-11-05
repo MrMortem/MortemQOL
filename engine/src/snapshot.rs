@@ -74,6 +74,9 @@ pub struct Joker {
     pub hidden: bool,
     #[serde(default)]
     pub sell: f64,
+    /// 1 common, 2 uncommon, 3 rare, 4 legendary.
+    #[serde(default)]
+    pub rarity: i32,
     #[serde(default)]
     pub ab: Value,
 }
@@ -129,6 +132,14 @@ pub struct Blind {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+pub struct Idol {
+    #[serde(default)]
+    pub rank: i32,
+    #[serde(default)]
+    pub suit: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct Round {
     #[serde(default)]
     pub hands_left: f64,
@@ -138,6 +149,24 @@ pub struct Round {
     pub dollars: f64,
     #[serde(default)]
     pub chips: f64,
+    /// The Idol's current target.
+    #[serde(default)]
+    pub idol: Idol,
+    /// Ancient Joker's current suit.
+    #[serde(default)]
+    pub ancient_suit: String,
+    /// Hands played this run, before the play being scored.
+    #[serde(default)]
+    pub hands_played: f64,
+    /// Hands played this round, before the play being scored.
+    #[serde(default)]
+    pub round_hands: f64,
+    /// Tarot cards used this run.
+    #[serde(default)]
+    pub tarot_used: f64,
+    /// The hand The Ox punishes.
+    #[serde(default)]
+    pub most_played: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -148,6 +177,9 @@ pub struct Deck {
     pub remaining: f64,
     #[serde(default)]
     pub total: f64,
+    /// Deck size at the start of the run.
+    #[serde(default)]
+    pub starting: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]

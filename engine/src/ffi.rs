@@ -80,8 +80,14 @@ pub unsafe extern "C" fn mqol_score(
     out_len: *mut usize,
 ) -> i32 {
     guarded(STATUS_ERROR, || {
-        let _ = (json, len);
-        write_out(b"not implemented", out, cap, out_len, STATUS_ERROR)
+        if json.is_null() {
+            return write_out(b"null request", out, cap, out_len, STATUS_ERROR);
+        }
+        let request = std::slice::from_raw_parts(json, len);
+        match crate::score::score_request(request) {
+            Ok(result) => write_out(&result, out, cap, out_len, STATUS_FINISHED),
+            Err(message) => write_out(message.as_bytes(), out, cap, out_len, STATUS_ERROR),
+        }
     })
 }
 

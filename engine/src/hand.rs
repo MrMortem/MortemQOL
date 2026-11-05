@@ -16,6 +16,14 @@ pub struct Detected {
     pub name: &'static str,
     /// Indexes into the played cards, in play order.
     pub scoring: Vec<usize>,
+    /// The poker hands this play contains, as checked by jokers such as Jolly Joker.
+    pub contains: Vec<&'static str>,
+}
+
+impl Detected {
+    pub fn has(&self, name: &str) -> bool {
+        self.contains.contains(&name)
+    }
 }
 
 const SUITS: [&str; 4] = ["Spades", "Hearts", "Clubs", "Diamonds"];
@@ -25,7 +33,7 @@ fn is_red(suit: &str) -> bool {
 }
 
 /// Rank for matching purposes. Stone cards have none.
-fn rank_of(card: &Card) -> Option<i32> {
+pub fn rank_of(card: &Card) -> Option<i32> {
     if card.is_stone() || card.hidden || card.rank <= 0 {
         None
     } else {
@@ -191,7 +199,9 @@ fn flat(groups: &[Vec<usize>]) -> Vec<usize> {
     out
 }
 
-fn classify(played: &[&Card], rules: &Rules) -> (&'static str, Vec<usize>) {
+type Classified = (&'static str, Vec<usize>, Vec<&'static str>);
+
+fn classify(played: &[&Card], rules: &Rules) -> Classified {
     let flush = get_flush(played, rules);
     let straight = get_straight(played, rules);
     let twos = get_x_same(2, played);
@@ -199,38 +209,76 @@ fn classify(played: &[&Card], rules: &Rules) -> (&'static str, Vec<usize>) {
     let fours = get_x_same(4, played);
     let fives = get_x_same(5, played);
 
-    if let (Some(five), Some(f)) = (fives.first(), &flush) {
-        return ("Flush Five", merged(five, f));
+    let mut contains: Vec<&'static str> = Vec::new();
+    if !fives.is_empty() && flush.is_some() {
+        contains.push("Flush Five");
     }
-    if let (true, true, Some(f)) = (!threes.is_empty(), twos.len() >= 2, &flush) {
-        return ("Flush House", merged(&flat(&twos), f));
+    if !threes.is_empty() && twos.len() >= 2 && flush.is_some() {
+        contains.push("Flush House");
     }
-    if let Some(five) = fives.first() {
-        return ("Five of a Kind", five.clone());
+    if !fives.is_empty() {
+        contains.push("Five of a Kind");
     }
-    if let (Some(s), Some(f)) = (&straight, &flush) {
-        return ("Straight Flush", merged(s, f));
+    if straight.is_some() && flush.is_some() {
+        contains.push("Straight Flush");
     }
-    if let Some(four) = fours.first() {
-        return ("Four of a Kind", four.clone());
+    if !fours.is_empty() {
+        contains.push("Four of a Kind");
     }
     if !threes.is_empty() && twos.len() >= 2 {
-        return ("Full House", flat(&twos));
+        contains.push("Full House");
     }
-    if let Some(f) = flush {
-        return ("Flush", f);
+    if flush.is_some() {
+        contains.push("Flush");
     }
-    if let Some(s) = straight {
-        return ("Straight", s);
+    if straight.is_some() {
+        contains.push("Straight");
     }
-    if let Some(three) = threes.first() {
-        return ("Three of a Kind", three.clone());
+    if !threes.is_empty() {
+        contains.push("Three of a Kind");
     }
     if twos.len() >= 2 {
-        return ("Two Pair", flat(&twos));
+        contains.push("Two Pair");
+    }
+    if !twos.is_empty() {
+        contains.push("Pair");
+    }
+    if !played.is_empty() {
+        contains.push("High Card");
+    }
+
+    if let (Some(five), Some(f)) = (fives.first(), &flush) {
+        return ("Flush Five", merged(five, f), contains);
+    }
+    if let (true, true, Some(f)) = (!threes.is_empty(), twos.len() >= 2, &flush) {
+        return ("Flush House", merged(&flat(&twos), f), contains);
+    }
+    if let Some(five) = fives.first() {
+        return ("Five of a Kind", five.clone(), contains);
+    }
+    if let (Some(s), Some(f)) = (&straight, &flush) {
+        return ("Straight Flush", merged(s, f), contains);
+    }
+    if let Some(four) = fours.first() {
+        return ("Four of a Kind", four.clone(), contains);
+    }
+    if !threes.is_empty() && twos.len() >= 2 {
+        return ("Full House", flat(&twos), contains);
+    }
+    if let Some(f) = flush {
+        return ("Flush", f, contains);
+    }
+    if let Some(s) = straight {
+        return ("Straight", s, contains);
+    }
+    if let Some(three) = threes.first() {
+        return ("Three of a Kind", three.clone(), contains);
+    }
+    if twos.len() >= 2 {
+        return ("Two Pair", flat(&twos), contains);
     }
     if let Some(two) = twos.first() {
-        return ("Pair", two.clone());
+        return ("Pair", two.clone(), contains);
     }
     let mut highest: Option<usize> = None;
     for i in 0..played.len() {
@@ -238,13 +286,13 @@ fn classify(played: &[&Card], rules: &Rules) -> (&'static str, Vec<usize>) {
             highest = Some(i);
         }
     }
-    ("High Card", highest.into_iter().collect())
+    ("High Card", highest.into_iter().collect(), contains)
 }
 
 pub fn detect(played: &[&Card], rules: &Rules) -> Detected {
-    let (name, base) = classify(played, rules);
+    let (name, base, contains) = classify(played, rules);
     let scoring = (0..played.len())
         .filter(|&i| rules.splash || played[i].is_stone() || base.contains(&i))
         .collect();
-    Detected { name, scoring }
+    Detected { name, scoring, contains }
 }
