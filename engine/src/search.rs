@@ -291,6 +291,8 @@ fn top_first(objective: Objective, candidates: &mut [Candidate]) {
         money
             .then_with(|| sort_key(b.expected).total_cmp(&sort_key(a.expected)))
             .then_with(|| sort_key(b.floor).total_cmp(&sort_key(a.floor)))
+            // Equal plays differ only in cards that add nothing, so keep those in hand.
+            .then_with(|| a.play.len().cmp(&b.play.len()))
     });
 }
 
