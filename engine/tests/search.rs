@@ -37,6 +37,34 @@ fn picks_pair_over_high_card() {
 }
 
 #[test]
+fn equal_scores_prefer_fewer_cards() {
+    // The pair sits around a kicker, so the search meets pair-plus-kicker first.
+    let best = last(&to_snapshot(&snap_json("AS KD AH"))).best.unwrap();
+    close(best.expected, 64.0);
+    assert_eq!(best.play, vec![1, 3]);
+}
+
+#[test]
+fn equal_scores_prefer_fewer_cards_among_many() {
+    let best = last(&to_snapshot(&snap_json("2C AS 7D KD AH 9C 4H 3S"))).best.unwrap();
+    assert_eq!(best.hand, "Pair");
+    assert_eq!(best.play, vec![2, 5]);
+}
+
+#[test]
+fn equal_money_and_score_prefer_fewer_cards() {
+    let mut v = snap_json("AS KD AH");
+    v["options"] = json!({"objective": "money"});
+    assert_eq!(last(&to_snapshot(&v)).best.unwrap().play, vec![1, 3]);
+}
+
+#[test]
+fn extra_card_kept_when_it_adds_score() {
+    let v = with_jokers("AS KD AH", vec![j("j_splash", json!({}))]);
+    assert_eq!(last(&to_snapshot(&v)).best.unwrap().play.len(), 3);
+}
+
+#[test]
 fn finds_joker_reorder_gain() {
     let v = with_jokers(
         "AS",
